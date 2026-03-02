@@ -240,13 +240,33 @@ RUST_LIB_BACKTRACE=full \
   --config /path/to/config.toml
 ```
 
-### Help Information
+### Available Commands
+
+The Clementine binary supports the following commands:
+
+- `verifier` - Run the verifier service
+- `operator` - Run the operator service
+- `aggregator` - Run the aggregator service
+- `test-actor` - Run the test actor (for health checks)
+- `generate-bitvm-cache` - Generate BitVM cache files
 
 View all available options:
 
 ```bash
 ./target/release/clementine-core --help
 ```
+
+### Generating BitVM Cache
+
+You can pre-generate BitVM cache files to avoid generation during runtime:
+
+```bash
+./target/release/clementine-core generate-bitvm-cache
+```
+
+<Note>
+  This command generates the BitVM cache files required for circuit verification. The cache files can be quite large and generation may take significant time depending on your hardware.
+</Note>
 
 ## RPC Authentication
 
