@@ -1,0 +1,129 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "Clementine",
+  "projectDescription": "BitVM-based trust-minimized two-way peg bridge between Bitcoin and Citrea L2",
+  "theme": "aspen",
+  "primaryColor": "#FF8C42",
+  "lightColor": "#FFB366",
+  "darkColor": "#E67A2E",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "introduction",
+              "architecture",
+              "design",
+              "security"
+            ]
+          },
+          {
+            "group": "Getting Started",
+            "pages": [
+              "getting-started/prerequisites",
+              "getting-started/installation",
+              "getting-started/configuration",
+              "getting-started/quickstart"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/manual-build",
+              "deployment/docker",
+              "deployment/environment-variables"
+            ]
+          },
+          {
+            "group": "Actors",
+            "pages": [
+              "actors/overview",
+              "actors/verifier",
+              "actors/operator",
+              "actors/aggregator"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "operations/deposit-flow",
+              "operations/withdrawal-flow",
+              "operations/rpc-authentication",
+              "operations/monitoring"
+            ]
+          },
+          {
+            "group": "Circuits",
+            "pages": [
+              "circuits/overview",
+              "circuits/bridge-circuit",
+              "circuits/header-chain-circuit",
+              "circuits/work-only-circuit"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "gRPC Services",
+            "pages": [
+              "api/verifier-service",
+              "api/operator-service",
+              "api/aggregator-service"
+            ]
+          },
+          {
+            "group": "Data Models",
+            "pages": [
+              "api/deposit",
+              "api/signatures",
+              "api/transactions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Additional Resources",
+            "pages": [
+              "resources/faq",
+              "resources/troubleshooting",
+              "resources/contributing",
+              "resources/changelog"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Trust-minimized Bitcoin to Citrea L2 bridge using BitVM",
+    "Distributed architecture with verifier, operator, and aggregator actors",
+    "Zero-knowledge proof circuits for bridge verification",
+    "musig2-based multi-signature coordination",
+    "gRPC-based communication with mTLS authentication",
+    "PostgreSQL-backed state management",
+    "Docker and manual deployment options"
+  ],
+  "publicApiSurface": [
+    "VerifierService.GetPublicNonce",
+    "VerifierService.GetPartialSignature",
+    "OperatorService.NewDeposit",
+    "OperatorService.GetKickoffUtxos",
+    "AggregatorService.GetAggregatedNonce",
+    "AggregatorService.GetAggregatedSignature",
+    "clementine-core verifier",
+    "clementine-core operator",
+    "clementine-core aggregator",
+    "Bridge Circuit",
+    "Header Chain Circuit",
+    "Work Only Circuit"
+  ]
+}
