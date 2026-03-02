@@ -1,0 +1,277 @@
+---
+title: Withdrawal Flow
+description: Understanding the withdrawal (peg-out) workflow in Clementine
+---
+
+The withdrawal flow, also known as the peg-out process, enables users to transfer Bitcoin from Citrea L2 back to the Bitcoin blockchain. This process uses BitVM2 for trust-minimized verification of the withdrawal's validity.
+
+## Overview
+
+Withdrawals are processed through a challenge-response mechanism where operators front the withdrawal payment and later prove their actions were valid. The system uses pre-signed transactions, zero-knowledge proofs, and a dissection game to ensure security without requiring changes to Bitcoin's protocol.
+
+## Key Participants
+
+### Operator
+- Fronts withdrawal payments to users on Bitcoin L1
+- Creates kickoff transaction to initiate BitVM2 process
+- Executes bridge circuit off-chain to prove correctness
+- Posts assert transactions revealing proof intermediate states
+- Must provide more proof-of-work than any watchtower challenger
+
+### Watchtowers
+- Monitor operator behavior for malicious actions
+- Submit challenge transactions with Work Only Proofs (WOP)
+- Provide alternative proof-of-work chains
+- Automatically include all verifiers plus additional watchtowers
+
+### Challengers
+- Verify operator's assert transactions
+- Post disprove transactions if errors are found
+- Can slash operator collateral if malicious behavior is proven
+- Execute single computation steps on-chain for verification
+
+## Pre-Signed Transaction Framework
+
+During the deposit (peg-in) phase, verifiers pre-sign a comprehensive set of transactions that govern future withdrawals. This creates a deterministic "game tree" for the BitVM2 protocol.
+
+### Why Pre-Sign?
+
+- **Covenant Emulation**: Creates enforceable rules without Bitcoin script changes
+- **Deterministic Execution**: Operators and challengers follow predefined paths
+- **Automated Challenge Flow**: Each transaction input maps to verified circuit state
+
+### Pre-Signed Transaction Types
+
+- **Kickoff Connectors**: Multiple small UTXOs spent by specific subsequent transactions
+- **Challenge Connectors**: Enable watchtower and challenger actions
+- **Assert Connectors**: Allow operator to post proof intermediates via WOTS
+- **Disprove Connectors**: Enable on-chain verification of disputed steps
+- **Operator ChallengeACK/NACK**: Acknowledge or fail to acknowledge watchtower challenges
+
+## Withdrawal Workflow
+
+<Steps>
+  <Step title="User Initiates Withdrawal on Citrea L2">
+    User submits withdrawal request on Citrea L2 bridge contract:
+    
+    1. Specifies amount and Bitcoin destination address
+    2. Burns or locks equivalent cBTC on Citrea
+    3. Withdrawal recorded in Citrea state with deposit UTXO reference
+    4. Storage proof becomes available for verification
+  </Step>
+  
+  <Step title="Operator Fronts Payment">
+    Operator executes the payout transaction on Bitcoin L1:
+    
+    1. Sends Bitcoin to user's specified address
+    2. Transaction included in a Bitcoin block
+    3. Operator notes the block hash containing the payout
+    4. Prepares to prove this action via bridge circuit
+    
+    **Risk**: Operator temporarily fronts capital before reimbursement proof
+  </Step>
+  
+  <Step title="Kickoff Transaction">
+    Operator broadcasts kickoff transaction to initiate reimbursement:
+    
+    1. Spends deposit UTXO from bridge vault
+    2. Creates connector outputs for challenge-response game
+    3. Commits payout block hash via Winternitz One-Time Signature (WOTS) in witness
+    4. Locks operator collateral as security
+    
+    **On-chain data**: Block hash commitment is publicly verifiable
+  </Step>
+  
+  <Step title="Watchtower Challenge Period">
+    Watchtowers can challenge if they detect issues:
+    
+    1. Watchtower sends challenge transaction spending personal funds
+    2. Submits Work Only Proof (WOP) showing alternative proof-of-work
+    3. Operator must acknowledge via OperatorChallengeACK transaction
+    4. If operator fails to acknowledge, challenger can slash via OperatorChallengeNACK
+    
+    **Critical**: Ensures operator cannot censor watchtower challenges
+  </Step>
+  
+  <Step title="Bridge Circuit Execution (Off-Chain)">
+    Operator executes the bridge circuit off-chain to generate proof:
+    
+    **Verification steps:**
+    
+    1. **Header Chain Proof (HCP)**: Verifies operator followed canonical Bitcoin chain with sufficient proof-of-work
+    
+    2. **Watchtower Challenge Processing**:
+       - Verifies Schnorr signatures on watchtower challenges
+       - Sorts challenges by total work (descending)
+       - Finds maximum valid work from watchtowers
+       - Proves operator's work exceeds watchtower maximum
+    
+    3. **Simple Payment Verification (SPV)**:
+       - Proves payout transaction inclusion in claimed block
+       - Uses Merkle proof with mid-state txid
+       - Verifies block header in Merkle Mountain Range (MMR)
+    
+    4. **Light Client Proof (LCP)**:
+       - Verifies Groth16 proof of Citrea L2 state
+       - Extracts state root from LCP output
+       - Ensures L1 block hash matches payout transaction block
+    
+    5. **EVM Storage Proofs**:
+       - Verifies deposit UTXO storage proof
+       - Verifies withdrawal data storage proof
+       - Confirms withdrawal matches payout transaction
+    
+    **Output**: Groth16 proof of correct execution
+  </Step>
+  
+  <Step title="Assert Transactions">
+    Operator posts assert transactions revealing proof computation:
+    
+    1. Breaks down Groth16 verification into steps
+    2. Each assert transaction reveals intermediate values via WOTS
+    3. Creates public, verifiable trace of computation
+    4. Commits to next step's expected output
+    
+    **Purpose**: Allows challengers to verify each computational step
+  </Step>
+  
+  <Step title="Challenge Window">
+    Challengers verify assert transactions:
+    
+    **If valid**:
+    - Operator successfully claims reimbursement after timeout
+    - Collateral returned to operator
+    - Withdrawal completes successfully
+    
+    **If invalid**:
+    - Challenger posts disprove transaction (next step)
+  </Step>
+  
+  <Step title="Disprove Transaction (If Challenged)">
+    If error detected, challenger posts disprove transaction:
+    
+    **BridgeDisproveScript**:
+    - Verifies the Groth16 proof on-chain
+    - Checks all bridge circuit conditions
+    - Executes single disputed computation step
+    
+    **ClementineDisproveScript**:
+    - Verifies inputs to bridge circuit match on-chain commitments
+    - Ensures WOTS-committed block hashes are correct
+    - Confirms watchtower challenges weren't censored
+    
+    **Outcome**: If disprove succeeds, challenger burns operator collateral
+  </Step>
+  
+  <Step title="Reimbursement or Slashing">
+    Final outcome based on verification:
+    
+    **Successful withdrawal**:
+    - Operator retrieves reimbursement from vault
+    - Collateral returned
+    - User has received Bitcoin on L1
+    
+    **Failed challenge response**:
+    - Operator collateral burned
+    - User may need to re-submit withdrawal
+    - System maintains security invariants
+  </Step>
+</Steps>
+
+## BitVM2 Challenge-Response Game
+
+### Dissection Game
+
+When a challenger disputes operator's computation:
+
+1. **Initial Disagreement**: Challenger identifies incorrect assert transaction
+2. **Binary Search**: Iteratively narrow down to specific computation step
+3. **Single Step Execution**: Execute disputed step on-chain in Bitcoin script
+4. **Resolution**: On-chain execution determines correctness
+
+### Why This Works
+
+- **Computation Decomposition**: Large computation broken into tiny steps
+- **Script Size Limits**: Only single step needs to fit in Bitcoin script
+- **Security Through Challenges**: Optimistic execution with fraud proofs
+- **Trust Minimization**: Bitcoin's consensus rules verify disputed steps
+
+## Winternitz One-Time Signatures (WOTS)
+
+### Purpose
+
+Bitcoin script cannot natively verify Schnorr signatures over arbitrary messages. WOTS enables message signing verifiable in Bitcoin script.
+
+### How It Works
+
+1. **Pre-computation**: Generate hash chains for signature
+2. **Signing**: Reveal specific hashes based on message bits
+3. **Verification**: Hash revealed values and check against public key
+
+### Use Cases in Clementine
+
+- Committing block hashes in kickoff transaction
+- Revealing intermediate proof states in assert transactions
+- Propagating state across UTXOs in BitVM2 protocol
+
+## Proof-of-Work Verification
+
+### Canonical Chain Determination
+
+Bitcoin's canonical chain is determined by total work (not just block count).
+
+**Operator Requirements**:
+- Must prove more total work than any watchtower challenger
+- Uses Header Chain Proof (HCP) with accumulated difficulty
+- Ensures operator followed the true Bitcoin consensus chain
+
+**Watchtower Challenge**:
+- Submits Work Only Proof (WOP) with alternative chain
+- Circuit verifies signature and proof validity
+- Extracts total work from valid WOPs
+- Operator must exceed maximum watchtower work
+
+### Failure Modes
+
+If operator's work ≤ watchtower work:
+- Operator automatically considered malicious
+- Did not follow canonical Bitcoin chain
+- Withdrawal validation fails
+
+## Security Guarantees
+
+### Trust Assumptions
+
+- **At least 1-of-N honest verifier**: Funds safe if one verifier key secure
+- **At least 1-of-M honest operator**: System operational if one operator participates
+- **Honest watchtower**: Detects and challenges malicious operators
+- **Honest challenger**: Can disprove invalid operator claims
+
+### Attack Scenarios
+
+**Malicious Operator**:
+- Cannot steal funds due to proof verification
+- Cannot censor watchtower challenges (enforced by pre-signed txs)
+- Collateral at risk if invalid proof posted
+
+**Collusion**:
+- Multiple operators cannot bypass proof requirements
+- Each withdrawal independently verified
+- Watchtowers monitor all operators
+
+## Bridge Denominator
+
+Withdrawals are processed in 10 BTC increments (bridge denominator).
+
+**Why 10 BTC?**
+- Each round transaction has limited kickoff connectors
+- Smaller denominator = lower withdrawal throughput
+- 1 BTC denominator currently infeasible
+- Open research question for optimization
+
+## Code References
+
+- Bridge circuit implementation: `risc0-circuits/bridge-circuit/`
+- Disprove scripts: `core/src/builder/script/`  
+- BitVM2 integration: `core/src/bitvm_client.rs`
+- Transaction builders: `core/src/builder/transaction/`

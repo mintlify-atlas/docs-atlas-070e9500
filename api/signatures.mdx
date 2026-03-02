@@ -1,0 +1,296 @@
+---
+title: "Signatures"
+description: "Signature types and models used in the Clementine protocol"
+---
+
+The Clementine protocol uses various signature types for different transaction scenarios. Signatures are categorized into normal signatures (used once) and numbered signatures (used multiple times).
+
+## TaggedSignature
+
+A signature with metadata identifying the transaction input it corresponds to.
+
+<ParamField body="normal_signature" type="NormalSignatureId">
+  Identifier for normal (single-use) signatures
+  
+  <Expandable title="NormalSignatureId fields">
+    <ResponseField name="signature_kind" type="NormalSignatureKind" required>
+      Type of normal signature
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="numbered_signature" type="NumberedSignatureId">
+  Identifier for numbered (multi-use) signatures
+  
+  <Expandable title="NumberedSignatureId fields">
+    <ResponseField name="signature_kind" type="NumberedSignatureKind" required>
+      Type of numbered signature
+    </ResponseField>
+    <ResponseField name="idx" type="int32" required>
+      Index of the signature instance
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="signature" type="bytes" required>
+  The actual signature bytes
+</ParamField>
+
+<Info>
+  The signature ID is set to `NotStored` for signatures created on-the-fly by the operator (these are not stored).
+</Info>
+
+---
+
+## NormalSignatureKind
+
+Signature types that are needed once per deposit transaction.
+
+<ResponseField name="NormalSignatureUnknown" type="enum" default="0">
+  Unknown or unspecified signature type
+</ResponseField>
+
+<ResponseField name="OperatorSighashDefault" type="enum" default="1">
+  Used for transaction handlers that verifiers don't care about. Created on-the-fly by the operator.
+</ResponseField>
+
+<ResponseField name="Challenge" type="enum" default="2">
+  Challenge transaction signature
+</ResponseField>
+
+<ResponseField name="DisproveTimeout2" type="enum" default="3">
+  Second disprove timeout signature
+</ResponseField>
+
+<ResponseField name="Disprove2" type="enum" default="4">
+  Second disprove signature
+</ResponseField>
+
+<ResponseField name="Reimburse1" type="enum" default="5">
+  First reimbursement signature
+</ResponseField>
+
+<ResponseField name="KickoffNotFinalized1" type="enum" default="6">
+  First kickoff not finalized signature
+</ResponseField>
+
+<ResponseField name="KickoffNotFinalized2" type="enum" default="7">
+  Second kickoff not finalized signature
+</ResponseField>
+
+<ResponseField name="Reimburse2" type="enum" default="8">
+  Second reimbursement signature
+</ResponseField>
+
+<ResponseField name="NoSignature" type="enum" default="9">
+  No signature required
+</ResponseField>
+
+<ResponseField name="ChallengeTimeout2" type="enum" default="10">
+  Second challenge timeout signature
+</ResponseField>
+
+<ResponseField name="MiniAssert1" type="enum" default="11">
+  First mini assert signature
+</ResponseField>
+
+<ResponseField name="OperatorChallengeAck1" type="enum" default="12">
+  First operator challenge acknowledgment signature
+</ResponseField>
+
+<ResponseField name="NotStored" type="enum" default="13">
+  Signature not stored (created on-the-fly)
+</ResponseField>
+
+<ResponseField name="YieldKickoffTxid" type="enum" default="14">
+  Yield kickoff transaction ID signature
+</ResponseField>
+
+<ResponseField name="LatestBlockhashTimeout1" type="enum" default="15">
+  First latest blockhash timeout signature
+</ResponseField>
+
+<ResponseField name="LatestBlockhashTimeout2" type="enum" default="16">
+  Second latest blockhash timeout signature
+</ResponseField>
+
+<ResponseField name="LatestBlockhashTimeout3" type="enum" default="17">
+  Third latest blockhash timeout signature
+</ResponseField>
+
+<ResponseField name="LatestBlockhash" type="enum" default="18">
+  Latest blockhash signature
+</ResponseField>
+
+---
+
+## NumberedSignatureKind
+
+Signature types that are needed multiple times per operator kickoff. Some watchtower signatures are needed once per watchtower, while assert signatures are needed multiple times.
+
+<ResponseField name="NumberedSignatureUnknown" type="enum" default="0">
+  Unknown or unspecified numbered signature type
+</ResponseField>
+
+<ResponseField name="NumberedNotStored" type="enum" default="1">
+  Numbered signature not stored (created on-the-fly by operator)
+</ResponseField>
+
+<ResponseField name="OperatorChallengeNack1" type="enum" default="2">
+  First operator challenge negative acknowledgment
+</ResponseField>
+
+<ResponseField name="OperatorChallengeNack2" type="enum" default="3">
+  Second operator challenge negative acknowledgment
+</ResponseField>
+
+<ResponseField name="OperatorChallengeNack3" type="enum" default="4">
+  Third operator challenge negative acknowledgment
+</ResponseField>
+
+<ResponseField name="AssertTimeout1" type="enum" default="5">
+  First assert timeout signature
+</ResponseField>
+
+<ResponseField name="AssertTimeout2" type="enum" default="6">
+  Second assert timeout signature
+</ResponseField>
+
+<ResponseField name="AssertTimeout3" type="enum" default="7">
+  Third assert timeout signature
+</ResponseField>
+
+<ResponseField name="UnspentKickoff1" type="enum" default="8">
+  First unspent kickoff signature
+</ResponseField>
+
+<ResponseField name="UnspentKickoff2" type="enum" default="9">
+  Second unspent kickoff signature
+</ResponseField>
+
+<ResponseField name="WatchtowerChallengeTimeout1" type="enum" default="10">
+  First watchtower challenge timeout
+</ResponseField>
+
+<ResponseField name="WatchtowerChallengeTimeout2" type="enum" default="11">
+  Second watchtower challenge timeout
+</ResponseField>
+
+<ResponseField name="WatchtowerChallenge" type="enum" default="12">
+  Watchtower challenge signature
+</ResponseField>
+
+---
+
+## Signature Models
+
+### SchnorrSig
+
+Schnorr signature wrapper.
+
+<ResponseField name="schnorr_sig" type="bytes" required>
+  Schnorr signature bytes
+</ResponseField>
+
+### PartialSig
+
+Partial signature used in MuSig2 protocol.
+
+<ResponseField name="partial_sig" type="bytes" required>
+  Partial signature bytes for aggregation
+</ResponseField>
+
+### DepositSignatures
+
+Collection of tagged signatures for a deposit.
+
+<ResponseField name="signatures" type="repeated TaggedSignature" required>
+  Array of tagged signatures with their identifiers
+</ResponseField>
+
+---
+
+## Nonce Generation
+
+### NonceGenRequest
+
+Request to generate nonces for MuSig2 signing.
+
+<ParamField body="num_nonces" type="uint32" required>
+  Number of nonces to generate
+</ParamField>
+
+### NonceGenFirstResponse
+
+Initial response from nonce generation containing session metadata.
+
+<ResponseField name="id" type="string" required>
+  Nonce session ID (string representation of u128 number)
+</ResponseField>
+
+<ResponseField name="num_nonces" type="uint32" required>
+  Number of nonces generated
+</ResponseField>
+
+### NonceGenResponse
+
+Streamed nonce generation response.
+
+<ResponseField name="first_response" type="NonceGenFirstResponse">
+  First response with session metadata (sent once)
+</ResponseField>
+
+<ResponseField name="pub_nonce" type="bytes">
+  Individual public nonce (streamed multiple times)
+</ResponseField>
+
+---
+
+## Challenge ACK Digest
+
+Digest used for challenge acknowledgment.
+
+<ResponseField name="hash" type="bytes" required>
+  Challenge ACK hash
+</ResponseField>
+
+---
+
+## Winternitz Public Key
+
+Winternitz signature public key used for commitment schemes.
+
+<ResponseField name="digit_pubkey" type="repeated bytes" required>
+  Array of digit public keys forming the Winternitz public key
+</ResponseField>
+
+<Info>
+  Winternitz signatures are used in the Clementine protocol for BitVM assert transactions and blockhash commitments.
+</Info>
+
+---
+
+## Example Usage
+
+### Tagged Signature with Normal Signature
+
+```json
+{
+  "normal_signature": {
+    "signature_kind": "Challenge"
+  },
+  "signature": "<64_bytes_schnorr_signature>"
+}
+```
+
+### Tagged Signature with Numbered Signature
+
+```json
+{
+  "numbered_signature": {
+    "signature_kind": "AssertTimeout1",
+    "idx": 5
+  },
+  "signature": "<64_bytes_schnorr_signature>"
+}
+```

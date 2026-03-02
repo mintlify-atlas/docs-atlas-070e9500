@@ -1,0 +1,479 @@
+---
+title: Monitoring and Observability
+description: Monitoring system health, metrics, and performance for Clementine entities
+---
+
+Clementine provides comprehensive monitoring and observability through Prometheus metrics, structured logging, and health status endpoints. This enables operators to track system health, diagnose issues, and ensure reliable operation.
+
+## Metrics Overview
+
+Clementine exposes Prometheus-compatible metrics for all entity types:
+
+- **L1 Sync Status**: Bitcoin blockchain synchronization state
+- **Entity Health**: Task status, errors, and stopped processes
+- **Aggregator Metrics**: External entity monitoring from aggregator perspective
+- **Performance Metrics**: Request durations, throughput, success rates
+
+## L1 Sync Status Metrics
+
+### Current Entity Metrics
+
+Each running entity (verifier/operator) publishes its own sync status under the `l1_sync_status` scope:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `wallet_balance_btc` | Gauge | Current wallet balance in BTC |
+| `rpc_tip_height` | Gauge | Latest block height from Bitcoin Core RPC |
+| `btc_syncer_synced_height` | Gauge | Block height processed by Bitcoin Syncer |
+| `hcp_last_proven_height` | Gauge | Latest Header Chain Proof block height |
+| `tx_sender_synced_height` | Gauge | Block height processed by Transaction Sender |
+| `finalized_synced_height` | Gauge | Latest finalized block height |
+| `state_manager_next_height` | Gauge | Next block height for State Manager to process |
+| `bitcoin_fee_rate_sat_vb` | Gauge | Current Bitcoin fee rate in sat/vB |
+
+### Example Query
+
+```promql
+# Check if entity is synced (within 5 blocks of tip)
+rpc_tip_height - btc_syncer_synced_height < 5
+
+# Wallet balance alert
+wallet_balance_btc < 0.1
+
+# Fee rate monitoring
+bitcoin_fee_rate_sat_vb > 100
+```
+
+### External Entity Metrics
+
+The aggregator publishes metrics for all connected entities with dynamic scopes:
+
+```
+<EntityId>_l1_sync_status
+```
+
+Where `EntityId` is formatted as:
+- `Operator(<first_10_chars_of_xonly_pk>)`
+- `Verifier(<first_10_chars_of_public_key>)`
+
+Example:
+```
+Operator(abcdef1234)_l1_sync_status_wallet_balance_btc
+Verifier(9876fedcba)_l1_sync_status_rpc_tip_height
+```
+
+### Additional Aggregator Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `entity_status_error_count` | Counter | Number of errors from entity status endpoint |
+| `stopped_tasks_count` | Gauge | Number of stopped background tasks for entity |
+
+## Sync Status Monitoring
+
+### Component Responsibilities
+
+**Bitcoin Syncer**:
+- Fetches blocks from Bitcoin Core RPC
+- Stores blocks in PostgreSQL database
+- Publishes blocks to consumers via event queue
+- Metric: `btc_syncer_synced_height`
+
+**Transaction Sender** (automation mode only):
+- Monitors blockchain for transaction confirmations
+- Automatically broadcasts transactions when conditions met
+- Handles fee bumping and replacement
+- Metric: `tx_sender_synced_height`
+
+**Finalized Block Fetcher**:
+- Determines block finality based on confirmations
+- Updates finalized height for withdrawal processing
+- Metric: `finalized_synced_height`
+
+**Header Chain Prover** (automation mode only):
+- Generates zero-knowledge proofs of block headers
+- Required for withdrawal verification
+- Metric: `hcp_last_proven_height`
+
+**State Manager** (automation mode only):
+- Processes blockchain events to update deposit/withdrawal states
+- Manages state machines for kickoff and round transactions
+- Metric: `state_manager_next_height`
+
+### Sync Lag Detection
+
+```promql
+# Bitcoin Syncer lag (blocks behind tip)
+rpc_tip_height - btc_syncer_synced_height > 10
+
+# Transaction Sender lag
+btc_syncer_synced_height - tx_sender_synced_height > 5
+
+# State Manager lag
+finalized_synced_height - state_manager_next_height > 3
+```
+
+## Health Status Endpoints
+
+### Get Current Status
+
+All entities expose a status endpoint:
+
+**Verifier**:
+```protobuf
+rpc GetCurrentStatus(Empty) returns (EntityStatus)
+```
+
+**Operator**:
+```protobuf
+rpc GetCurrentStatus(Empty) returns (EntityStatus)
+```
+
+**Response**:
+```json
+{
+  "wallet_balance": 1.5,
+  "rpc_tip_height": 850000,
+  "btc_syncer_synced_height": 849998,
+  "hcp_last_proven_height": 849990,
+  "tx_sender_synced_height": 849995,
+  "finalized_synced_height": 849985,
+  "state_manager_next_height": 849986,
+  "btc_fee_rate_sat_vb": 25,
+  "automation": true
+}
+```
+
+### Aggregator Entity Status
+
+Aggregator can query status of all connected entities:
+
+```protobuf
+rpc GetEntityStatuses(GetEntityStatusesRequest) returns (GetEntityStatusesResponse)
+
+message GetEntityStatusesRequest {
+  bool restart_tasks = 1;  // Optionally restart stopped background tasks
+}
+
+message GetEntityStatusesResponse {
+  repeated EntityStatusWithId entity_statuses = 1;
+}
+
+message EntityStatusWithId {
+  EntityId entity_id = 1;
+  oneof status_result {
+    EntityStatus status = 2;
+    EntityError err = 3;
+  }
+}
+```
+
+**Example Response**:
+```json
+{
+  "entity_statuses": [
+    {
+      "entity_id": {
+        "kind": "OPERATOR",
+        "id": "abcdef123456..."
+      },
+      "status": {
+        "wallet_balance": 2.5,
+        "rpc_tip_height": 850000,
+        ...
+      }
+    },
+    {
+      "entity_id": {
+        "kind": "VERIFIER",
+        "id": "9876fedcba..."
+      },
+      "err": {
+        "error": "Connection timeout"
+      }
+    }
+  ]
+}
+```
+
+### Background Task Management
+
+Restart stopped tasks via aggregator:
+
+```bash
+# Request with restart_tasks = true
+grpcurl -d '{"restart_tasks": true}' \
+  -cacert ca.pem \
+  localhost:50051 \
+  clementine.ClementineAggregator/GetEntityStatuses
+```
+
+## Logging Configuration
+
+### Log Levels
+
+Control verbosity with `--verbose` flag:
+
+```bash
+# Level 1: Errors only
+./clementine-core verifier --config config.toml --verbose 1
+
+# Level 3: Info (default)
+./clementine-core verifier --config config.toml --verbose 3
+
+# Level 5: Debug/Trace (everything)
+./clementine-core verifier --config config.toml --verbose 5
+```
+
+**Log Level Mapping**:
+- 1: Error
+- 2: Warn  
+- 3: Info
+- 4: Debug
+- 5: Trace
+
+### Structured Logging
+
+Clementine uses structured logging with contextual information:
+
+```rust
+tracing::info!(
+    deposit_txid = %deposit_outpoint.txid,
+    vout = deposit_outpoint.vout,
+    "Processing new deposit"
+);
+
+tracing::error!(
+    error = ?err,
+    verifier_id = %verifier_id,
+    "Failed to collect nonce from verifier"
+);
+```
+
+**Output**:
+```
+2026-03-02T12:34:56.789Z INFO clementine_core::aggregator: Processing new deposit deposit_txid=abc123... vout=0
+2026-03-02T12:34:57.123Z ERROR clementine_core::aggregator: Failed to collect nonce from verifier verifier_id=Verifier(def456...) error=Timeout
+```
+
+### Full Backtraces
+
+Enable detailed error traces:
+
+```bash
+RUST_LIB_BACKTRACE=full ./clementine-core operator --config config.toml
+```
+
+## Alerting Examples
+
+### Prometheus Alerting Rules
+
+```yaml
+groups:
+  - name: clementine
+    interval: 30s
+    rules:
+      # Sync lag alerts
+      - alert: BitcoinSyncerLagging
+        expr: rpc_tip_height - btc_syncer_synced_height > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Bitcoin Syncer lagging behind tip"
+          description: "Bitcoin Syncer is {{ $value }} blocks behind RPC tip"
+      
+      # Low balance alert
+      - alert: LowWalletBalance
+        expr: wallet_balance_btc < 0.1
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Wallet balance critically low"
+          description: "Wallet has {{ $value }} BTC remaining"
+      
+      # High fee alert
+      - alert: HighBitcoinFees
+        expr: bitcoin_fee_rate_sat_vb > 200
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "Bitcoin fees elevated"
+          description: "Current fee rate: {{ $value }} sat/vB"
+      
+      # Entity unreachable
+      - alert: EntityUnreachable
+        expr: increase(entity_status_error_count[5m]) > 3
+        labels:
+          severity: critical
+        annotations:
+          summary: "Entity not responding to status requests"
+          description: "Entity {{ $labels.entity_id }} has {{ $value }} errors"
+      
+      # Stopped tasks
+      - alert: BackgroundTasksStopped
+        expr: stopped_tasks_count > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Background tasks have stopped"
+          description: "{{ $value }} tasks stopped for {{ $labels.entity_id }}"
+```
+
+### Grafana Dashboard
+
+Example dashboard panels:
+
+**Sync Status Panel**:
+```promql
+# Show all sync heights
+rpc_tip_height
+btc_syncer_synced_height
+tx_sender_synced_height
+finalized_synced_height
+state_manager_next_height
+```
+
+**Wallet Balance Panel**:
+```promql
+sum(wallet_balance_btc) by (entity_type)
+```
+
+**Entity Health Panel**:
+```promql
+count(entity_status_error_count) by (entity_id)
+```
+
+## Performance Monitoring
+
+### Request Duration Tracking
+
+Clementine tracks request durations for timeout detection:
+
+```rust
+// Timed request with timeout
+let result = timed_request(
+    Duration::from_secs(30),
+    "get_operator_keys",
+    operator_client.get_deposit_keys(params)
+).await;
+```
+
+**Logged on timeout**:
+```
+ERROR: Timed out while get_operator_keys after 30s
+```
+
+### Database Query Metrics
+
+```promql
+# Query execution time
+histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m]))
+
+# Query error rate  
+rate(db_query_errors_total[5m])
+```
+
+## Debugging Tools
+
+### Tokio Console
+
+Debug async task performance:
+
+```bash
+# Build with console support
+cargo build_console
+
+# Run clementine
+./target/debug/clementine-core verifier --config config.toml
+
+# In another terminal, launch console
+tokio-console
+```
+
+Provides:
+- Task spawn/completion tracking
+- Async lock contention detection  
+- Resource leak identification
+- Task duration histograms
+
+### Database Inspection
+
+```bash
+# Connect to PostgreSQL
+psql -h localhost -U clementine -d clementine
+
+# Check sync status
+SELECT owner_type, next_height_to_process 
+FROM state_manager_status;
+
+# View recent blocks
+SELECT height, hash, time 
+FROM blocks 
+ORDER BY height DESC 
+LIMIT 10;
+
+# Check state machines
+SELECT machine_type, COUNT(*) 
+FROM state_machines 
+GROUP BY machine_type;
+```
+
+## Troubleshooting
+
+### Sync Stalled
+
+**Symptoms**: `btc_syncer_synced_height` not increasing
+
+**Diagnosis**:
+1. Check Bitcoin Core RPC connectivity
+2. Verify database connection
+3. Check for error logs
+4. Ensure sufficient disk space
+
+**Resolution**:
+```bash
+# Restart Bitcoin Syncer task
+grpcurl -d '{"restart_tasks": true}' \
+  localhost:50051 \
+  clementine.ClementineVerifier/RestartBackgroundTasks
+```
+
+### High Memory Usage
+
+**Diagnosis**:
+```bash
+# Check process memory
+ps aux | grep clementine
+
+# Database connections
+SELECT count(*) FROM pg_stat_activity WHERE datname='clementine';
+```
+
+**Resolution**:
+- Reduce `max_connections` in database config
+- Adjust `RUST_MIN_STACK` if too high
+- Check for memory leaks with valgrind
+
+### Missing Metrics
+
+**Automation Mode Required**:
+- `tx_sender_synced_height` - only in automation mode
+- `hcp_last_proven_height` - only in automation mode  
+- `state_manager_next_height` - only in automation mode
+
+**Verify build**:
+```bash
+./clementine-core --version
+# Should show: Built with features: automation
+```
+
+## Code References
+
+- Metrics definitions: `core/src/metrics.rs`
+- Status endpoints: `core/src/rpc/`
+- Aggregator metric publisher: `core/src/task/aggregator_metric_publisher.rs`
+- Database sync tracking: `core/src/database/`

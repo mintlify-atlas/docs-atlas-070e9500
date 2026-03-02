@@ -1,0 +1,201 @@
+---
+title: Frequently Asked Questions
+description: Common questions and answers about Clementine's BitVM-based bridge
+---
+
+# Frequently Asked Questions
+
+Find answers to common questions about Clementine's trust-minimized bridge design and implementation.
+
+## Bridge Design
+
+<AccordionGroup>
+  <Accordion title="Why do bridge funds stay in N-of-N instead of M-of-N?">
+    It is important to distinguish this N-of-N arrangement from a traditional multisignature wallet; instead, it functions as a **key deletion covenant**. A covenant is a mechanism that restricts how an UTXO can be spent.
+
+    One potential concern is that if any of the signers refuse to sign, new deposits could be blocked, as the required N-of-N signatures could not be collected. However, this isn't a problem because:
+
+    - The Bridge Contract also maintains a separate **M-of-N multisig**, which has the authority to update the N-of-N set
+    - While this may appear similar to simply holding bridge funds in an M-of-N multisig, it is fundamentally different
+    - Funds already deposited and secured by the N-of-N covenant remain safe
+    - Updates to the N-of-N set can be subject to time restrictions (for example, allowing one month for updates)
+    - This gives participants the opportunity to exit the system if they do not trust the new set of signers
+
+    <Tip>
+      The bridge is designed to remain **secure** as long as at least one of the N signers' keys is still secure, and to remain **operational** as long as at least one operator continues to participate.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="Why is the bridge denominator 10 BTC and not 1 BTC?">
+    This is still an open research question. However, from current observations, 1 BTC doesn't seem feasible.
+
+    The reason is that every round transaction has a limited amount of kickoff connectors, which limits the withdrawal throughput. Using 10 BTC as the denomination provides better throughput characteristics while maintaining security properties.
+
+    <Note>
+      This parameter may be refined as the protocol evolves and more research is conducted on optimal throughput configurations.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Why do we use Winternitz One-Time Signatures?">
+    In Bitcoin script, with native opcodes, one can only verify Schnorr signatures that sign the transaction. In other words, **one cannot verify a Schnorr signature that signs a random message**.
+
+    However, Winternitz and Lamport signatures can be verified just by taking hashes and checking for equality (Winternitz involves some additional mathematical operations where Bitcoin has those).
+
+    ### Use Case
+
+    This allows us to use Winternitz to propagate state across UTXOs. For example:
+    - In BitVM, the prover signs intermediate steps
+    - Later, the same signatures can be used to disprove an incorrect proof
+
+    This makes Winternitz signatures essential for the verification system in Clementine's BitVM implementation.
+  </Accordion>
+
+  <Accordion title="What are the different actor types in Clementine?">
+    Clementine has three main actor types that work together to operate the bridge:
+
+    1. **Verifier** (sometimes called signer)
+       - Participates in the N-of-N multisig
+       - Signs transactions using MuSig2
+       - Validates deposits and withdrawals
+
+    2. **Operator**
+       - Monitors the Bitcoin blockchain
+       - Initiates deposit and withdrawal processes
+       - Typically runs alongside a verifier service
+
+    3. **Aggregator**
+       - Coordinates the MuSig2 signing process
+       - Collects nonces and signatures from verifiers
+       - Creates and broadcasts move transactions
+
+    <Tip>
+      An entity can run multiple actors. For example, an operator entity typically runs both an operator and a verifier service sharing the same database.
+    </Tip>
+  </Accordion>
+
+  <Accordion title="How does the MuSig2 signing process work?">
+    The deposit finalization process uses [MuSig2](https://github.com/bitcoin-core/secp256k1/blob/master/doc/musig.md#signing) and consists of three steps:
+
+    1. **Nonce Aggregation**
+       - Aggregator collects nonces from all verifiers
+       - Nonces are aggregated using MuSig2
+       - Aggregated nonce is sent back to verifiers
+
+    2. **Signature Aggregation**
+       - Partial signatures are requested from verifiers for the aggregated nonce
+       - Signatures are aggregated using MuSig2
+       - Final Schnorr signature is sent to verifiers
+
+    3. **Move TX Creation**
+       - Verifiers use aggregated signatures to finalize the deposit
+       - Verifiers return move tx partial signatures
+       - Aggregator aggregates these and creates the move transaction
+
+    This process ensures trust-minimized coordination without requiring a single trusted party.
+  </Accordion>
+
+  <Accordion title="What is RISC0_DEV_MODE and when should I use it?">
+    `RISC0_DEV_MODE` is an environment variable that enables development mode for RISC Zero circuits.
+
+    **When to use it:**
+    - Running tests
+    - Local development
+    - Testing deployments
+
+    **When NOT to use it:**
+    - Production deployments
+    - Mainnet operations
+    - When you need full cryptographic proofs
+
+    ```bash
+    # Enable for development/testing
+    export RISC0_DEV_MODE=1
+    ```
+
+    <Warning>
+      Never enable `RISC0_DEV_MODE` in production environments as it bypasses proof generation for faster development cycles.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Can I use environment variables instead of config files?">
+    Yes! Clementine supports both configuration methods and you can even mix them.
+
+    **For main configuration:**
+    - Set `READ_CONFIG_FROM_ENV=1` to read from environment variables
+    - Otherwise, use `--config /path/to/config.toml`
+
+    **For protocol parameters:**
+    - Set `READ_PARAMSET_FROM_ENV=1` to read from environment variables
+    - Otherwise, use `--protocol-params /path/to/params.toml`
+
+    **Mixed approach example:**
+    ```bash
+    # Config from file, protocol params from env
+    READ_CONFIG_FROM_ENV=0 READ_PARAMSET_FROM_ENV=1 \
+      ./clementine-core verifier --config /path/to/config.toml
+    ```
+
+    See the `.env.example` file in the repository for a complete reference.
+  </Accordion>
+</AccordionGroup>
+
+## Security
+
+<AccordionGroup>
+  <Accordion title="How does Clementine ensure security?">
+    Clementine uses multiple security layers:
+
+    1. **BitVM for trust minimization** - Leverages BitVM2 for optimistic verification
+    2. **N-of-N key deletion covenant** - Funds are protected as long as one signer remains honest
+    3. **Mutual TLS (mTLS)** - All gRPC communications are encrypted and authenticated
+    4. **Client certificate verification** - Only authorized entities can call RPC methods
+    5. **Watchtower mechanism** - Monitors for incorrect proofs and challenges them
+
+    For more details, see the [Clementine whitepaper](https://citrea.xyz/clementine_whitepaper.pdf).
+  </Accordion>
+
+  <Accordion title="What should I know about TLS certificates in production?">
+    <Warning>
+      The `generate_certs.sh` script is for testing only. In production:
+    </Warning>
+
+    - Use certificates signed by a trusted Certificate Authority (CA)
+    - Keep private keys (*.key files) secure
+    - Never commit private keys to version control
+    - Rotate certificates regularly
+    - Consider using distinct client certificates for different services
+    - Store certificates in secure, encrypted storage
+
+    See the [Security Considerations](/resources/troubleshooting#security) section for more information.
+  </Accordion>
+</AccordionGroup>
+
+## Resources
+
+<AccordionGroup>
+  <Accordion title="Where can I learn more about BitVM?">
+    - [Clementine Whitepaper](https://citrea.xyz/clementine_whitepaper.pdf) - Explains Clementine's specific implementation
+    - [BitVM Bridge Paper](https://bitvm.org/bitvm_bridge.pdf) - Original BitVM bridge design
+    - [BitVM2](http://bitvm.org/bitvm2) - Latest BitVM protocol version
+  </Accordion>
+
+  <Accordion title="Where can I find code documentation?">
+    Code documentation is available in two places:
+
+    1. **Online:** [chainwayxyz.github.io/clementine/clementine_core](https://chainwayxyz.github.io/clementine/clementine_core/)
+    2. **Local generation:**
+       ```bash
+       cargo doc --no-deps
+       ```
+       Documentation will be at `target/doc/clementine_core/index.html`
+  </Accordion>
+</AccordionGroup>
+
+## Still have questions?
+
+If you can't find the answer you're looking for:
+
+- Check the [Troubleshooting](/resources/troubleshooting) guide
+- Browse [GitHub Issues](https://github.com/chainwayxyz/clementine/issues)
+- Join the [Citrea Discord](https://discord.gg/citrea)
+- For security issues, see [Security Reporting](/resources/contributing#security-reporting)

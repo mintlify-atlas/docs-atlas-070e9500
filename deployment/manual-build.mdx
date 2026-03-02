@@ -1,0 +1,335 @@
+---
+title: Manual Build and Deployment
+description: Step-by-step guide for manually compiling and running Clementine services
+---
+
+## Prerequisites
+
+Before compiling Clementine, ensure you have the following installed:
+
+### Install Rust
+
+1. Install Rust using rustup: [rustup.rs](https://rustup.rs/)
+
+### Install RiscZero
+
+2. Install RiscZero (v2.1.0): [dev.risczero.com/api/zkvm/install](https://dev.risczero.com/api/zkvm/install)
+
+```bash
+curl -L https://risczero.com/install | bash
+rzup install cargo-risczero 2.1.0 # Or v2.1.0
+rzup install r0vm 2.1.0
+rzup install rust 1.88.0
+```
+
+### Platform-Specific Dependencies
+
+<Tabs>
+  <Tab title="macOS">
+    Install XCode and its app from AppStore (if `xcrun metal` gives an error):
+
+    ```bash
+    xcode-select --install
+    ```
+  </Tab>
+  <Tab title="Ubuntu/Debian">
+    Install required system packages:
+
+    ```bash
+    sudo apt install build-essential libssl-dev pkg-config
+    ```
+  </Tab>
+</Tabs>
+
+## Runtime Prerequisites
+
+Before running Clementine, you need to set up the following services:
+
+<Steps>
+  <Step title="Install Bitcoin Core">
+    Install and configure a Bitcoin node (at least v29.0)
+  </Step>
+
+  <Step title="Set up PostgreSQL">
+    Install and configure PostgreSQL. Using Docker:
+
+    ```bash
+    docker run --name clementine-test-db \
+    -e POSTGRES_USER=clementine \
+    -e POSTGRES_PASSWORD=clementine \
+    -e POSTGRES_DB=clementine \
+    -p 5432:5432 \
+    --restart always \
+    -d postgres:15 \
+    bash -c "exec docker-entrypoint.sh postgres -c 'max_connections=1000'"
+    ```
+  </Step>
+
+  <Step title="Install RISC Zero toolchain">
+    Install the cargo-risczero tool:
+
+    ```bash
+    cargo install cargo-risczero
+    ```
+  </Step>
+
+  <Step title="Generate TLS certificates (Optional)">
+    TLS certificates are required to start and connect to a Clementine server. For tests, these are automatically generated if not present.
+
+    ```bash
+    ./scripts/generate_certs.sh
+    ```
+
+    <Note>
+      For production use, you should use certificates signed by a trusted CA rather than self-signed ones. See the [RPC Authentication](#rpc-authentication) section for more details.
+    </Note>
+  </Step>
+
+  <Step title="Set environment variables">
+    Set required environment variables:
+
+    ```bash
+    # Enable development mode for testing
+    export RISC0_DEV_MODE=1
+
+    # Set minimum stack size
+    export RUST_MIN_STACK=33554432
+    ```
+  </Step>
+
+  <Step title="Download BitVM cache (Optional)">
+    Download pre-generated BitVM cache. If not downloaded, it will be generated automatically:
+
+    ```bash
+    wget https://static.testnet.citrea.xyz/common/bitvm_cache_v3.bin -O bitvm_cache.bin
+    wget https://static.testnet.citrea.xyz/common/bitvm_cache_dev.bin -O bitvm_cache_dev.bin
+    
+    # If RISC0_DEV_MODE is not set
+    export BITVM_CACHE_PATH=/path/to/bitvm_cache.bin
+    
+    # If RISC0_DEV_MODE is set
+    export BITVM_CACHE_PATH=/path/to/bitvm_cache_dev.bin
+    ```
+  </Step>
+</Steps>
+
+## Building Clementine
+
+### Standard Build
+
+Build Clementine without automation features:
+
+```bash
+cargo build --release
+```
+
+### Build with Automation
+
+Clementine can be configured to enable automation at build-time via the `automation` feature. The automation feature enables the State Manager and Transaction Sender which automatically fulfills the duties of verifier/operator/aggregator entities:
+
+```bash
+cargo build --release --features automation
+```
+
+The compiled binary will be located at `./target/release/clementine-core`.
+
+## Running Clementine Services
+
+Clementine provides a single binary that can act as 3 different services:
+
+- **Verifier** (sometimes called signer)
+- **Operator**
+- **Aggregator**
+
+These services communicate via gRPC and use a PostgreSQL database. They can be configured to share the same database.
+
+### Using Configuration Files
+
+<Steps>
+  <Step title="Prepare configuration files">
+    Running the binary requires a configuration file. An example configuration file is located at `core/src/test/data/bridge_config.toml`. Copy and modify it for your deployment:
+
+    ```bash
+    cp core/src/test/data/bridge_config.toml /path/to/your/config.toml
+    ```
+
+    Optionally, prepare a protocol parameters file for protocol-specific settings.
+  </Step>
+
+  <Step title="Run a service">
+    <Tabs>
+      <Tab title="Verifier">
+        ```bash
+        ./target/release/clementine-core verifier --config /path/to/config.toml
+        ```
+      </Tab>
+      <Tab title="Operator">
+        ```bash
+        ./target/release/clementine-core operator --config /path/to/config.toml
+        ```
+      </Tab>
+      <Tab title="Aggregator">
+        ```bash
+        ./target/release/clementine-core aggregator --config /path/to/config.toml
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Add protocol parameters (Optional)">
+    Run with both configuration and protocol parameter files:
+
+    ```bash
+    ./target/release/clementine-core verifier \
+      --config /path/to/config.toml \
+      --protocol-params /path/to/params.toml
+    ```
+  </Step>
+</Steps>
+
+### Using Environment Variables
+
+It is also possible to use environment variables instead of configuration files. See the `.env.example` file for reference.
+
+<Steps>
+  <Step title="Set configuration source">
+    Enable environment-based configuration:
+
+    ```bash
+    export READ_CONFIG_FROM_ENV=1
+    export READ_PARAMSET_FROM_ENV=1
+    ```
+  </Step>
+
+  <Step title="Run with environment variables">
+    ```bash
+    READ_CONFIG_FROM_ENV=1 READ_PARAMSET_FROM_ENV=1 \
+      ./target/release/clementine-core verifier
+    ```
+  </Step>
+</Steps>
+
+### Mixed Configuration
+
+You can mix configuration approaches - for example, reading main configuration from a file but protocol parameters from environment variables:
+
+```bash
+READ_CONFIG_FROM_ENV=0 READ_PARAMSET_FROM_ENV=1 \
+  ./target/release/clementine-core verifier --config /path/to/config.toml
+```
+
+## Command-Line Options
+
+### Verbose Logging
+
+Specify log level with the `--verbose` flag (0-5, where 5 logs everything):
+
+```bash
+./target/release/clementine-core operator \
+  --config /path/to/config.toml \
+  --verbose 5
+```
+
+### Enable Full Backtraces
+
+Set `RUST_LIB_BACKTRACE` to `full` to enable full backtraces for errors:
+
+```bash
+RUST_LIB_BACKTRACE=full \
+  ./target/release/clementine-core operator \
+  --config /path/to/config.toml
+```
+
+### Help Information
+
+View all available options:
+
+```bash
+./target/release/clementine-core --help
+```
+
+## RPC Authentication
+
+Clementine uses mutual TLS (mTLS) to secure gRPC communications between entities and to authenticate clients.
+
+### Certificate Setup
+
+Before running the servers, generate certificates:
+
+```bash
+# Run from the project root
+./scripts/generate_certs.sh
+```
+
+This creates certificates in the following structure:
+
+```
+certs/
+├── ca/
+│   ├── ca.key     # CA private key
+│   └── ca.pem     # CA certificate
+├── server/
+│   ├── ca.pem     # Copy of CA certificate (for convenience)
+│   ├── server.key # Server private key
+│   └── server.pem # Server certificate
+├── client/
+│   ├── ca.pem     # Copy of CA certificate (for convenience)
+│   ├── client.key # Client private key
+│   └── client.pem # Client certificate
+└── aggregator/
+    ├── ca.pem     # Copy of CA certificate (for convenience)
+    ├── aggregator.key # Aggregator private key
+    └── aggregator.pem # Aggregator certificate
+```
+
+### Certificate Verification
+
+Client certificates are verified and filtered by the verifier/operator to ensure that:
+
+1. Verifier/Operator methods can only be called by the aggregator (using aggregator's client certificate `aggregator_cert_path`)
+2. Internal methods can only be called by the entity's own client certificate (using the entity's client certificate `client_cert_path`)
+
+The aggregator does not enforce client certificates but does use TLS for encryption.
+
+<Warning>
+  For production use, you should use certificates signed by a trusted CA rather than self-signed ones.
+</Warning>
+
+## Deployment Entities
+
+Typical deployment entities are:
+
+### Operator Entity
+- Runs both an operator and a verifier service
+
+### Verifier Entity
+- Runs a verifier service
+
+### Aggregator Entity
+- Runs both an aggregator and a verifier service
+
+All services run by a single entity should ideally share the same database.
+
+## Running Tests
+
+To run all tests:
+
+```bash
+cargo test --all-features
+```
+
+Run unit and integration tests separately:
+
+```bash
+cargo test_unit
+cargo test_integration
+```
+
+## Security Considerations
+
+<Warning>
+  - Keep private keys (*.key) secure and don't commit them to version control
+  - In production, use properly signed certificates from a trusted CA
+  - Rotate certificates regularly
+  - Consider using distinct client certificates for different clients/services
+</Warning>

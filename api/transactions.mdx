@@ -1,0 +1,424 @@
+---
+title: "Transactions"
+description: "Transaction models and types used in the Clementine protocol"
+---
+
+The Clementine protocol uses various transaction types for different protocol operations including deposits, withdrawals, challenges, and reimbursements.
+
+## Transaction Identifiers
+
+### GrpcTransactionId
+
+Unified transaction identifier supporting both normal and numbered transaction types.
+
+<ParamField body="normal_transaction" type="NormalTransactionId">
+  Normal transaction type (used once per deposit)
+</ParamField>
+
+<ParamField body="numbered_transaction" type="NumberedTransactionId">
+  Numbered transaction type (used multiple times)
+  
+  <Expandable title="NumberedTransactionId fields">
+    <ResponseField name="transaction_type" type="NumberedTransactionType" required>
+      Type of numbered transaction
+    </ResponseField>
+    <ResponseField name="index" type="int32" required>
+      Index of the transaction instance
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+---
+
+## NormalTransactionId
+
+Transaction types that occur once per deposit or operation.
+
+<ResponseField name="UNSPECIFIED_TRANSACTION_TYPE" type="enum" default="0">
+  Unspecified transaction type
+</ResponseField>
+
+<ResponseField name="ROUND" type="enum" default="1">
+  Round transaction (operator's collateral chain)
+</ResponseField>
+
+<ResponseField name="KICKOFF" type="enum" default="2">
+  Kickoff transaction initiating withdrawal process
+</ResponseField>
+
+<ResponseField name="MOVE_TO_VAULT" type="enum" default="3">
+  Move-to-vault transaction (deposit confirmation)
+</ResponseField>
+
+<ResponseField name="PAYOUT" type="enum" default="4">
+  Payout transaction for withdrawals
+</ResponseField>
+
+<ResponseField name="CHALLENGE" type="enum" default="5">
+  Challenge transaction for dispute resolution
+</ResponseField>
+
+<ResponseField name="DISPROVE" type="enum" default="6">
+  Disprove transaction responding to challenges
+</ResponseField>
+
+<ResponseField name="DISPROVE_TIMEOUT" type="enum" default="7">
+  Disprove timeout transaction
+</ResponseField>
+
+<ResponseField name="REIMBURSE" type="enum" default="8">
+  Reimbursement transaction
+</ResponseField>
+
+<ResponseField name="ALL_NEEDED_FOR_DEPOSIT" type="enum" default="9">
+  Special identifier to request all transactions needed for a deposit
+</ResponseField>
+
+<ResponseField name="DUMMY" type="enum" default="10">
+  Dummy transaction for testing
+</ResponseField>
+
+<ResponseField name="READY_TO_REIMBURSE" type="enum" default="11">
+  Ready-to-reimburse state transaction
+</ResponseField>
+
+<ResponseField name="KICKOFF_NOT_FINALIZED" type="enum" default="12">
+  Kickoff not finalized transaction
+</ResponseField>
+
+<ResponseField name="CHALLENGE_TIMEOUT" type="enum" default="13">
+  Challenge timeout transaction
+</ResponseField>
+
+<ResponseField name="BURN_UNUSED_KICKOFF_CONNECTORS" type="enum" default="14">
+  Burn unused kickoff connectors transaction
+</ResponseField>
+
+<ResponseField name="YIELD_KICKOFF_TXID" type="enum" default="15">
+  Yield kickoff transaction ID
+</ResponseField>
+
+<ResponseField name="REPLACEMENT_DEPOSIT" type="enum" default="17">
+  Replacement deposit transaction
+</ResponseField>
+
+<ResponseField name="LATEST_BLOCKHASH_TIMEOUT" type="enum" default="18">
+  Latest blockhash timeout transaction
+</ResponseField>
+
+<ResponseField name="LATEST_BLOCKHASH" type="enum" default="19">
+  Latest blockhash transaction
+</ResponseField>
+
+<ResponseField name="OPTIMISTIC_PAYOUT" type="enum" default="20">
+  Optimistic payout transaction
+</ResponseField>
+
+---
+
+## NumberedTransactionType
+
+Transaction types that occur multiple times per operation (indexed by number).
+
+<ResponseField name="UNSPECIFIED_INDEXED_TRANSACTION_TYPE" type="enum" default="0">
+  Unspecified indexed transaction type
+</ResponseField>
+
+<ResponseField name="WATCHTOWER_CHALLENGE" type="enum" default="1">
+  Watchtower challenge transaction (one per watchtower)
+</ResponseField>
+
+<ResponseField name="OPERATOR_CHALLENGE_NACK" type="enum" default="2">
+  Operator challenge negative acknowledgment
+</ResponseField>
+
+<ResponseField name="OPERATOR_CHALLENGE_ACK" type="enum" default="3">
+  Operator challenge acknowledgment
+</ResponseField>
+
+<ResponseField name="ASSERT_TIMEOUT" type="enum" default="4">
+  Assert timeout transaction
+</ResponseField>
+
+<ResponseField name="UNSPENT_KICKOFF" type="enum" default="5">
+  Unspent kickoff transaction
+</ResponseField>
+
+<ResponseField name="MINI_ASSERT" type="enum" default="6">
+  Mini assert transaction (multiple per BitVM proof)
+</ResponseField>
+
+<ResponseField name="WATCHTOWER_CHALLENGE_TIMEOUT" type="enum" default="7">
+  Watchtower challenge timeout
+</ResponseField>
+
+---
+
+## Transaction Models
+
+### TransactionRequest
+
+Request to create transactions for a specific deposit and kickoff.
+
+<ParamField body="deposit_outpoint" type="Outpoint" required>
+  Deposit UTXO outpoint
+  
+  <Expandable title="Outpoint fields">
+    <ResponseField name="txid" type="Txid" required>
+      Transaction ID (bytes)
+    </ResponseField>
+    <ResponseField name="vout" type="uint32" required>
+      Output index
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="kickoff_id" type="KickoffId" required>
+  Kickoff identifier
+  
+  <Expandable title="KickoffId fields">
+    <ResponseField name="operator_xonly_pk" type="bytes" required>
+      Operator's x-only public key
+    </ResponseField>
+    <ResponseField name="round_idx" type="uint32" required>
+      Round index in operator's collateral chain
+    </ResponseField>
+    <ResponseField name="kickoff_idx" type="uint32" required>
+      Kickoff index within the round
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+---
+
+### RawSignedTx
+
+Raw Bitcoin transaction in serialized format.
+
+<ResponseField name="raw_tx" type="bytes" required>
+  Serialized Bitcoin transaction bytes
+</ResponseField>
+
+---
+
+### RawSignedTxs
+
+Collection of raw signed transactions.
+
+<ResponseField name="raw_txs" type="repeated RawSignedTx" required>
+  Array of raw signed transactions
+</ResponseField>
+
+---
+
+### SignedTxWithType
+
+Signed transaction with its type identifier.
+
+<ResponseField name="transaction_type" type="GrpcTransactionId" required>
+  Transaction type identifier
+</ResponseField>
+
+<ResponseField name="raw_tx" type="bytes" required>
+  Raw transaction bytes
+</ResponseField>
+
+---
+
+### SignedTxsWithType
+
+Collection of signed transactions with their types.
+
+<ResponseField name="signed_txs" type="repeated SignedTxWithType" required>
+  Array of signed transactions with type information
+</ResponseField>
+
+---
+
+### RawTxWithRbfInfo
+
+Raw transaction with Replace-By-Fee signing information.
+
+<ResponseField name="raw_tx" type="bytes" required>
+  Raw transaction bytes
+</ResponseField>
+
+<ResponseField name="rbf_info" type="RbfSigningInfoRpc" required>
+  RBF signing information
+  
+  <Expandable title="RbfSigningInfoRpc fields">
+    <ResponseField name="merkle_root" type="bytes" required>
+      Merkle root for RBF signing
+    </ResponseField>
+    <ResponseField name="vout" type="uint32" required>
+      Output index for RBF
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+### SendTxRequest
+
+Request to send a transaction with fee specification.
+
+<ParamField body="raw_tx" type="RawSignedTx" required>
+  Raw signed transaction to send
+</ParamField>
+
+<ParamField body="fee_type" type="FeeType" required>
+  Fee payment method
+</ParamField>
+
+---
+
+## Fee Types
+
+### FeeType
+
+Methods for paying transaction fees.
+
+<ResponseField name="UNSPECIFIED" type="enum" default="0">
+  Unspecified fee type
+</ResponseField>
+
+<ResponseField name="CPFP" type="enum" default="1">
+  Child-Pays-For-Parent fee bumping
+</ResponseField>
+
+<ResponseField name="RBF" type="enum" default="2">
+  Replace-By-Fee for fee bumping
+</ResponseField>
+
+<ResponseField name="NO_FUNDING" type="enum" default="3">
+  No additional fee funding required
+</ResponseField>
+
+---
+
+## Transaction Metadata
+
+### TxMetadata
+
+Metadata associated with a transaction for tracking and debugging.
+
+<ResponseField name="deposit_outpoint" type="Outpoint" required>
+  Associated deposit outpoint
+</ResponseField>
+
+<ResponseField name="operator_xonly_pk" type="XOnlyPublicKeyRpc" required>
+  Operator's x-only public key
+</ResponseField>
+
+<ResponseField name="round_idx" type="uint32" required>
+  Round index
+</ResponseField>
+
+<ResponseField name="kickoff_idx" type="uint32" required>
+  Kickoff index
+</ResponseField>
+
+<ResponseField name="tx_type" type="GrpcTransactionId" required>
+  Transaction type identifier
+</ResponseField>
+
+---
+
+## Withdrawal Models
+
+### WithdrawParams
+
+Parameters for withdrawal/payout transactions.
+
+<ParamField body="withdrawal_id" type="uint32" required>
+  Withdrawal ID in Citrea
+</ParamField>
+
+<ParamField body="input_signature" type="bytes" required>
+  User's `TapSighashType::SinglePlusAnyoneCanPay` signature
+</ParamField>
+
+<ParamField body="input_outpoint" type="Outpoint" required>
+  User's UTXO to claim the deposit
+</ParamField>
+
+<ParamField body="output_script_pubkey" type="bytes" required>
+  Withdrawal output's script pubkey (signature is only valid for this pubkey)
+</ParamField>
+
+<ParamField body="output_amount" type="uint64" required>
+  Withdrawal output's amount in satoshis (signature is only valid for this amount)
+</ParamField>
+
+---
+
+### WithdrawParamsWithSig
+
+Withdrawal parameters with optional verification signature.
+
+<ParamField body="withdrawal" type="WithdrawParams" required>
+  Core withdrawal parameters
+</ParamField>
+
+<ParamField body="verification_signature" type="string">
+  Optional ECDSA signature from Citrea/aggregator for authentication
+</ParamField>
+
+---
+
+### FinalizedPayoutParams
+
+Parameters for finalized payout transactions.
+
+<ParamField body="payout_blockhash" type="bytes" required>
+  Bitcoin blockhash for the payout
+</ParamField>
+
+<ParamField body="deposit_outpoint" type="Outpoint" required>
+  Associated deposit outpoint
+</ParamField>
+
+---
+
+## Example Usage
+
+### Transaction Request
+
+```json
+{
+  "deposit_outpoint": {
+    "txid": {"txid": "<32_bytes>"},
+    "vout": 0
+  },
+  "kickoff_id": {
+    "operator_xonly_pk": "<32_bytes>",
+    "round_idx": 1,
+    "kickoff_idx": 0
+  }
+}
+```
+
+### Signed Transaction with Type
+
+```json
+{
+  "transaction_type": {
+    "normal_transaction": "MOVE_TO_VAULT"
+  },
+  "raw_tx": "<raw_bitcoin_tx_bytes>"
+}
+```
+
+### Numbered Transaction
+
+```json
+{
+  "transaction_type": {
+    "numbered_transaction": {
+      "transaction_type": "MINI_ASSERT",
+      "index": 42
+    }
+  },
+  "raw_tx": "<raw_bitcoin_tx_bytes>"
+}
+```

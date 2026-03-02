@@ -1,0 +1,385 @@
+---
+title: Troubleshooting
+description: Common issues and solutions for Clementine bridge operators
+---
+
+# Troubleshooting
+
+This guide helps you diagnose and resolve common issues when running Clementine.
+
+## Installation Issues
+
+### RISC Zero Installation Fails
+
+<AccordionGroup>
+  <Accordion title="Symptom: cargo-risczero installation fails">
+    **Problem:** RISC Zero toolchain fails to install or wrong version is installed.
+
+    **Solution:**
+    ```bash
+    # Install the correct version (2.1.0)
+    curl -L https://risczero.com/install | bash
+    rzup install cargo-risczero 2.1.0
+    rzup install r0vm 2.1.0
+    rzup install rust 1.88.0
+    ```
+
+    Verify the installation:
+    ```bash
+    cargo risczero --version
+    ```
+  </Accordion>
+
+  <Accordion title="Symptom: xcrun metal errors on macOS">
+    **Problem:** Metal compiler errors when building on macOS.
+
+    **Solution:**
+    ```bash
+    # Install Xcode Command Line Tools
+    xcode-select --install
+    ```
+
+    Also install Xcode from the App Store if the error persists.
+  </Accordion>
+
+  <Accordion title="Symptom: Compilation fails on Ubuntu with SSL errors">
+    **Problem:** Missing system dependencies on Ubuntu/Debian.
+
+    **Solution:**
+    ```bash
+    sudo apt update
+    sudo apt install build-essential libssl-dev pkg-config
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Runtime Issues
+
+### Server Won't Start
+
+<AccordionGroup>
+  <Accordion title="Symptom: Stack overflow errors">
+    **Problem:** Server crashes with stack overflow errors.
+
+    **Solution:**
+    Set the minimum stack size:
+    ```bash
+    export RUST_MIN_STACK=33554432
+    ```
+
+    <Note>
+      Add this to your shell profile (~/.bashrc or ~/.zshrc) to make it permanent.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Symptom: Database connection errors">
+    **Problem:** Cannot connect to PostgreSQL database.
+
+    **Solution:**
+    1. Verify PostgreSQL is running:
+       ```bash
+       docker ps | grep clementine-test-db
+       ```
+
+    2. Check connection settings in your config file:
+       ```toml
+       [db]
+       host = "localhost"
+       port = 5432
+       user = "clementine"
+       password = "clementine"
+       dbname = "clementine"
+       ```
+
+    3. If using Docker, ensure the container is running:
+       ```bash
+       docker run --name clementine-test-db \
+         -e POSTGRES_USER=clementine \
+         -e POSTGRES_PASSWORD=clementine \
+         -e POSTGRES_DB=clementine \
+         -p 5432:5432 \
+         --restart always \
+         -d postgres:15 \
+         bash -c "exec docker-entrypoint.sh postgres -c 'max_connections=1000'"
+       ```
+  </Accordion>
+
+  <Accordion title="Symptom: TLS certificate errors">
+    **Problem:** Server fails to start with certificate-related errors.
+
+    **Solution:**
+    1. Generate certificates for testing:
+       ```bash
+       ./scripts/generate_certs.sh
+       ```
+
+    2. Verify certificate paths in config:
+       ```toml
+       [rpc]
+       server_cert_path = "./certs/server/server.pem"
+       server_key_path = "./certs/server/server.key"
+       ca_cert_path = "./certs/ca/ca.pem"
+       ```
+
+    3. Ensure certificate files exist and are readable:
+       ```bash
+       ls -la certs/server/
+       ```
+
+    <Warning>
+      For production, use properly signed certificates from a trusted CA, not self-signed certificates.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Symptom: Bitcoin node connection fails">
+    **Problem:** Cannot connect to Bitcoin node.
+
+    **Solution:**
+    1. Verify Bitcoin Core is running (v29.0 or later required)
+    2. Check RPC credentials in config:
+       ```toml
+       [bitcoin]
+       rpc_url = "http://localhost:8332"
+       rpc_user = "bitcoin"
+       rpc_password = "bitcoin"
+       network = "regtest"  # or "testnet4" or "mainnet"
+       ```
+
+    3. Ensure Bitcoin Core RPC is enabled in bitcoin.conf:
+       ```conf
+       server=1
+       rpcuser=bitcoin
+       rpcpassword=bitcoin
+       rpcallowip=127.0.0.1
+       ```
+  </Accordion>
+</AccordionGroup>
+
+### RPC Authentication Issues
+
+<AccordionGroup>
+  <Accordion title="Symptom: Client certificate verification fails">
+    **Problem:** RPC calls are rejected with authentication errors.
+
+    **Solution:**
+    Clementine uses mutual TLS (mTLS) for authentication:
+
+    1. **Verifier/Operator methods** can only be called by the aggregator:
+       - Ensure aggregator is using the correct client certificate
+       - Path specified in `aggregator_cert_path` in config
+
+    2. **Internal methods** can only be called by the entity's own certificate:
+       - Use the entity's client certificate (`client_cert_path`)
+
+    3. Verify certificate configuration:
+       ```toml
+       [rpc]
+       client_cert_path = "./certs/client/client.pem"
+       client_key_path = "./certs/client/client.key"
+       aggregator_cert_path = "./certs/aggregator/aggregator.pem"
+       ```
+
+    <Note>
+      The aggregator does not enforce client certificates but does use TLS for encryption.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Testing Issues
+
+### Test Failures
+
+<AccordionGroup>
+  <Accordion title="Symptom: Tests fail with RISC0 errors">
+    **Problem:** Circuit-related tests fail.
+
+    **Solution:**
+    1. Enable dev mode for testing:
+       ```bash
+       export RISC0_DEV_MODE=1
+       ```
+
+    2. Optionally download BitVM cache:
+       ```bash
+       wget https://static.testnet.citrea.xyz/common/bitvm_cache_dev.bin -O bitvm_cache_dev.bin
+       export BITVM_CACHE_PATH=/path/to/bitvm_cache_dev.bin
+       ```
+  </Accordion>
+
+  <Accordion title="Symptom: Unit tests pass but integration tests fail">
+    **Problem:** Integration tests require more setup than unit tests.
+
+    **Solution:**
+    1. Ensure PostgreSQL is running
+    2. Ensure Bitcoin node is running (for applicable tests)
+    3. Check that all environment variables are set:
+       ```bash
+       export RISC0_DEV_MODE=1
+       export RUST_MIN_STACK=33554432
+       ```
+
+    4. Run integration tests separately:
+       ```bash
+       cargo test_integration
+       ```
+
+    <Tip>
+      You can run unit and integration tests separately using the cargo aliases defined in `.cargo/config.toml`:
+      - `cargo test_unit_debug` - Unit tests only
+      - `cargo test_integration` - Integration tests only
+    </Tip>
+  </Accordion>
+</AccordionGroup>
+
+## Performance Issues
+
+### Slow Performance
+
+<AccordionGroup>
+  <Accordion title="Symptom: Circuit generation is very slow">
+    **Problem:** BitVM cache generation takes a long time.
+
+    **Solution:**
+    Download pre-generated cache:
+    ```bash
+    # For dev mode
+    wget https://static.testnet.citrea.xyz/common/bitvm_cache_dev.bin -O bitvm_cache_dev.bin
+    export BITVM_CACHE_PATH=/path/to/bitvm_cache_dev.bin
+
+    # For production
+    wget https://static.testnet.citrea.xyz/common/bitvm_cache_v3.bin -O bitvm_cache.bin
+    export BITVM_CACHE_PATH=/path/to/bitvm_cache.bin
+    ```
+
+    <Note>
+      If not downloaded, the cache will be generated automatically on first run, which can take significant time.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Symptom: Database queries are slow">
+    **Problem:** PostgreSQL performance degradation.
+
+    **Solution:**
+    1. Increase max connections if needed:
+       ```bash
+       docker run --name clementine-test-db \
+         -e POSTGRES_USER=clementine \
+         -e POSTGRES_PASSWORD=clementine \
+         -e POSTGRES_DB=clementine \
+         -p 5432:5432 \
+         --restart always \
+         -d postgres:15 \
+         bash -c "exec docker-entrypoint.sh postgres -c 'max_connections=1000'"
+       ```
+
+    2. Monitor database performance
+    3. Consider running migrations if schema is outdated
+  </Accordion>
+</AccordionGroup>
+
+## Debugging
+
+### Getting More Information
+
+<AccordionGroup>
+  <Accordion title="Enable verbose logging">
+    Increase log verbosity to debug issues:
+    ```bash
+    ./target/release/clementine-core verifier \
+      --config /path/to/config.toml \
+      --verbose 5  # Logs everything
+    ```
+
+    Log levels:
+    - 1: Errors only
+    - 2: Warnings
+    - 3: Info
+    - 4: Debug
+    - 5: Trace (everything)
+  </Accordion>
+
+  <Accordion title="Enable full backtraces">
+    Get detailed error backtraces:
+    ```bash
+    RUST_LIB_BACKTRACE=full ./target/release/clementine-core verifier --config /path/to/config.toml
+    ```
+  </Accordion>
+
+  <Accordion title="Debug Tokio tasks">
+    For debugging async task issues:
+
+    1. Uncomment `console-subscriber` dependency in `Cargo.toml`
+    2. Uncomment `console_subscriber::init();` in `src/utils.rs`
+    3. Rebuild with console support:
+       ```bash
+       cargo build_console
+       ```
+
+    4. Run your service and access the console:
+       ```bash
+       tokio-console
+       ```
+
+    <Note>
+      This provides real-time visibility into Tokio task execution, helping identify deadlocks and performance issues.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Security
+
+### Certificate Management
+
+<Warning>
+  Proper certificate management is critical for production deployments.
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="Best practices for TLS certificates">
+    1. **Never commit private keys** to version control
+    2. **Use proper CAs** in production, not self-signed certificates
+    3. **Rotate certificates regularly** to minimize exposure
+    4. **Use distinct certificates** for different services/entities
+    5. **Store certificates securely** with appropriate file permissions:
+       ```bash
+       chmod 600 certs/server/server.key
+       chmod 600 certs/client/client.key
+       chmod 644 certs/server/server.pem
+       chmod 644 certs/client/client.pem
+       ```
+
+    6. **Monitor certificate expiration** and renew before expiry
+  </Accordion>
+</AccordionGroup>
+
+## Common Error Messages
+
+| Error | Possible Cause | Solution |
+|-------|---------------|----------|
+| `stack overflow` | `RUST_MIN_STACK` not set | `export RUST_MIN_STACK=33554432` |
+| `Connection refused (database)` | PostgreSQL not running | Start PostgreSQL container |
+| `Connection refused (bitcoin)` | Bitcoin node not running | Start Bitcoin Core |
+| `Certificate verify failed` | Wrong certificate or missing CA | Check certificate paths and regenerate |
+| `RISC0 proof generation failed` | Wrong RISC0 version or mode | Verify version 2.1.0 and set `RISC0_DEV_MODE=1` for tests |
+| `BitVM cache not found` | Cache not downloaded | Download cache or let it generate |
+| `Authentication failed` | mTLS certificate mismatch | Verify client certificate matches expected cert in config |
+
+## Getting Help
+
+If you're still experiencing issues:
+
+1. **Search existing issues**: Check [GitHub Issues](https://github.com/chainwayxyz/clementine/issues) for similar problems
+2. **Review logs**: Run with `--verbose 5` to get detailed logs
+3. **Check configuration**: Verify all paths and settings in your config file
+4. **Create an issue**: If you've found a bug, [create a new issue](https://github.com/chainwayxyz/clementine/issues/new) with:
+   - Clementine version
+   - Operating system
+   - Full error message and backtrace
+   - Steps to reproduce
+   - Configuration (sanitize sensitive data)
+
+5. **Security issues**: For security vulnerabilities, see [Security Reporting](/resources/contributing#security-reporting)
+
+<Tip>
+  Join the [Citrea Discord](https://discord.gg/citrea) for community support and real-time help.
+</Tip>

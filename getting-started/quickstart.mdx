@@ -1,0 +1,287 @@
+---
+title: Quick Start
+description: Get Clementine up and running quickly with this step-by-step guide
+---
+
+This guide will help you get Clementine running quickly for development and testing purposes.
+
+## Before You Begin
+
+Make sure you've completed:
+
+1. [Prerequisites](/getting-started/prerequisites) - System requirements and dependencies
+2. [Installation](/getting-started/installation) - Rust, RISC Zero, and Clementine installation
+3. [Configuration](/getting-started/configuration) - Configuration file setup
+
+## Quick Start Steps
+
+<Steps>
+  <Step title="Set required environment variables">
+    Set the essential environment variables:
+
+    ```bash
+    # Required: Minimum stack size
+    export RUST_MIN_STACK=33554432
+
+    # For testing: Enable development mode
+    export RISC0_DEV_MODE=1
+
+    # Optional: Enable full backtraces for debugging
+    export RUST_LIB_BACKTRACE=full
+    ```
+
+    <Warning>
+    `RISC0_DEV_MODE=1` should only be used for development and testing. Never use this in production as it skips actual proof generation.
+    </Warning>
+  </Step>
+
+  <Step title="Start PostgreSQL database">
+    If you haven't already, start the PostgreSQL database:
+
+    ```bash
+    docker run --name clementine-test-db \
+      -e POSTGRES_USER=clementine \
+      -e POSTGRES_PASSWORD=clementine \
+      -e POSTGRES_DB=clementine \
+      -p 5432:5432 \
+      --restart always \
+      -d postgres:15 \
+      bash -c "exec docker-entrypoint.sh postgres -c 'max_connections=1000'"
+    ```
+  </Step>
+
+  <Step title="Generate TLS certificates">
+    Generate self-signed certificates for testing:
+
+    ```bash
+    ./scripts/generate_certs.sh
+    ```
+
+    This creates the necessary certificate structure in the `certs/` directory.
+  </Step>
+
+  <Step title="Prepare configuration">
+    Copy the example configuration file:
+
+    ```bash
+    cp core/src/test/data/bridge_config.toml config.toml
+    cp core/src/test/data/protocol_paramset.toml params.toml
+    ```
+
+    <Note>
+    For a quick start with default settings, you can use these files as-is for regtest mode.
+    </Note>
+  </Step>
+
+  <Step title="Build Clementine">
+    Build Clementine with automation features:
+
+    ```bash
+    cargo build --release --features automation
+    ```
+
+    The automation feature enables automatic fulfillment of verifier/operator/aggregator duties.
+  </Step>
+
+  <Step title="Start a service">
+    Start your chosen service (verifier, operator, or aggregator):
+
+    <CodeGroup>
+    ```bash Verifier
+    ./target/release/clementine-core verifier \
+      --config config.toml \
+      --protocol-params params.toml
+    ```
+
+    ```bash Operator
+    ./target/release/clementine-core operator \
+      --config config.toml \
+      --protocol-params params.toml
+    ```
+
+    ```bash Aggregator
+    ./target/release/clementine-core aggregator \
+      --config config.toml \
+      --protocol-params params.toml
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Understanding Clementine Services
+
+Clementine provides a single binary that can act as three different services:
+
+### Verifier (Signer)
+
+- Verifies and signs transactions
+- Participates in the multi-signature scheme
+- Requires a secret key for signing
+
+### Operator
+
+- Manages peg-in and peg-out operations
+- Coordinates with verifiers
+- Handles collateral and withdrawal fees
+
+### Aggregator
+
+- Collects signatures from verifiers
+- Aggregates proofs
+- Coordinates the overall bridge operation
+
+## Typical Deployment Entities
+
+Entities typically run services in these combinations:
+
+### Operator Entity
+
+- Runs both an operator and a verifier service
+- Should share the same database between services
+
+### Verifier Entity
+
+- Runs a verifier service only
+
+### Aggregator Entity
+
+- Runs both an aggregator and a verifier service
+- Should share the same database between services
+
+## Running with Custom Log Levels
+
+Control the verbosity of logs with the `--verbose` flag:
+
+```bash
+./target/release/clementine-core verifier \
+  --config config.toml \
+  --verbose 5  # Logs everything (0-5, where 5 is most verbose)
+```
+
+## Using Environment Variables Instead
+
+Alternatively, run Clementine using only environment variables:
+
+```bash
+READ_CONFIG_FROM_ENV=1 READ_PARAMSET_FROM_ENV=1 \
+  ./target/release/clementine-core verifier
+```
+
+Make sure your `.env` file is properly configured (see [Configuration](/getting-started/configuration) for details).
+
+## Running Tests
+
+Verify your installation by running the test suite:
+
+<CodeGroup>
+```bash All tests
+cargo test --all-features
+```
+
+```bash Unit tests only
+cargo test_unit
+```
+
+```bash Integration tests only
+cargo test_integration
+```
+</CodeGroup>
+
+<Note>
+Integration tests may take some time to complete and require all dependencies (PostgreSQL, Bitcoin node) to be running.
+</Note>
+
+## Using Docker
+
+For a containerized deployment, Clementine provides Docker images and compose files:
+
+### Pull from Docker Hub
+
+```bash
+docker pull chainwayxyz/clementine:latest
+```
+
+### Build locally
+
+```bash
+docker build -f scripts/docker/Dockerfile -t clementine:latest .
+```
+
+### Run with Docker Compose
+
+Clementine includes Docker Compose files for different network configurations:
+
+<CodeGroup>
+```bash Testnet4
+docker compose -f scripts/docker/docker-compose.verifier.testnet4.yml up
+```
+
+```bash Regtest (Full stack)
+docker compose -f scripts/docker/docker-compose.full.regtest.yml up
+```
+</CodeGroup>
+
+<Warning>
+Docker Compose configurations in `scripts/docker/configs/` are configured for typical deployments and need modification before production use. Newly created wallets won't have funds - you're responsible for funding them.
+</Warning>
+
+## Optional: Download BitVM Cache
+
+To speed up initialization, download pre-generated BitVM cache files:
+
+<CodeGroup>
+```bash Production mode
+wget https://static.testnet.citrea.xyz/common/bitvm_cache_v3.bin -O bitvm_cache.bin
+export BITVM_CACHE_PATH=$(pwd)/bitvm_cache.bin
+```
+
+```bash Development mode
+wget https://static.testnet.citrea.xyz/common/bitvm_cache_dev.bin -O bitvm_cache_dev.bin
+export BITVM_CACHE_PATH=$(pwd)/bitvm_cache_dev.bin
+```
+</CodeGroup>
+
+## Troubleshooting
+
+### Stack Overflow Errors
+
+If you encounter stack overflow errors, ensure `RUST_MIN_STACK` is set:
+
+```bash
+export RUST_MIN_STACK=33554432
+```
+
+### Database Connection Issues
+
+Verify PostgreSQL is running and accessible:
+
+```bash
+docker ps | grep clementine-test-db
+psql -h 127.0.0.1 -U clementine -d clementine
+```
+
+### Certificate Errors
+
+If you see TLS certificate errors:
+
+1. Ensure certificates were generated: `./scripts/generate_certs.sh`
+2. Verify certificate paths in your configuration
+3. Check that private keys have appropriate permissions
+
+### Getting Help
+
+For more detailed information:
+
+```bash
+./target/release/clementine-core --help
+./target/release/clementine-core verifier --help
+```
+
+## What's Next?
+
+Now that you have Clementine running:
+
+- Learn about [Architecture](/concepts/architecture) to understand how Clementine works
+- Explore [Configuration](/getting-started/configuration) for advanced configuration options
+- Check out [Deployment](/deployment/production) for production deployment guidelines
+- Review [Security Considerations](/security/best-practices) for production deployments

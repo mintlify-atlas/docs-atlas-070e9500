@@ -1,0 +1,384 @@
+---
+title: Contributing to Clementine
+description: Guidelines for contributing to the Clementine bridge project
+---
+
+# Contributing to Clementine
+
+Thank you for your interest in contributing to Clementine! This guide will help you get started with contributing to the project.
+
+## Getting Started
+
+### Prerequisites
+
+Before you begin contributing, make sure you have:
+
+1. **Rust toolchain** installed via [rustup.rs](https://rustup.rs/)
+2. **RISC Zero** (version 2.1.0):
+   ```bash
+   curl -L https://risczero.com/install | bash
+   rzup install cargo-risczero 2.1.0
+   rzup install r0vm 2.1.0
+   rzup install rust 1.88.0
+   ```
+
+3. **System dependencies**:
+   - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
+   - **Ubuntu**: `sudo apt install build-essential libssl-dev pkg-config`
+
+4. **Development tools**:
+   - PostgreSQL (for testing)
+   - Bitcoin Core v29.0 or later
+   - Git
+
+### Setting Up Your Development Environment
+
+1. **Fork and clone the repository**:
+   ```bash
+   git clone https://github.com/YOUR-USERNAME/clementine.git
+   cd clementine
+   ```
+
+2. **Set up PostgreSQL** for testing:
+   ```bash
+   docker run --name clementine-test-db \
+     -e POSTGRES_USER=clementine \
+     -e POSTGRES_PASSWORD=clementine \
+     -e POSTGRES_DB=clementine \
+     -p 5432:5432 \
+     --restart always \
+     -d postgres:15 \
+     bash -c "exec docker-entrypoint.sh postgres -c 'max_connections=1000'"
+   ```
+
+3. **Set required environment variables**:
+   ```bash
+   export RISC0_DEV_MODE=1
+   export RUST_MIN_STACK=33554432
+   ```
+
+4. **Generate test certificates**:
+   ```bash
+   ./scripts/generate_certs.sh
+   ```
+
+5. **Download BitVM cache** (optional but recommended):
+   ```bash
+   wget https://static.testnet.citrea.xyz/common/bitvm_cache_dev.bin -O bitvm_cache_dev.bin
+   export BITVM_CACHE_PATH=/path/to/bitvm_cache_dev.bin
+   ```
+
+## Development Workflow
+
+### Making Changes
+
+1. **Create a new branch** for your changes:
+   ```bash
+   git checkout -b feature/your-feature-name
+   # or
+   git checkout -b fix/issue-number-description
+   ```
+
+2. **Make your changes** following the [code style guidelines](#code-style)
+
+3. **Write or update tests** for your changes
+
+4. **Run the test suite** to ensure everything passes:
+   ```bash
+   # Run all tests
+   cargo test --all-features
+
+   # Or run separately
+   cargo test_unit_debug      # Unit tests only
+   cargo test_integration     # Integration tests only
+   ```
+
+5. **Generate documentation** if you've changed public APIs:
+   ```bash
+   cargo doc --no-deps
+   ```
+
+### Testing Your Changes
+
+<Note>
+  Clementine uses separate test commands for unit and integration tests.
+</Note>
+
+#### Unit Tests
+
+Unit tests run quickly and don't require external dependencies:
+
+```bash
+# Debug mode (faster compilation)
+cargo test_unit_debug
+
+# Release mode (faster execution)
+cargo test_unit_release
+```
+
+#### Integration Tests
+
+Integration tests require PostgreSQL and may require Bitcoin Core:
+
+```bash
+# Debug mode
+cargo test_integration
+
+# Release mode
+cargo test_integration_release
+```
+
+Integration tests run with limited parallelism (`--test-threads 7`) to avoid database conflicts.
+
+#### Writing Tests
+
+When adding new features or fixing bugs:
+
+1. **Add unit tests** in the same file as your code or in the appropriate `test` module
+2. **Add integration tests** in `core/src/test/` if testing cross-component functionality
+3. **Follow existing test patterns** - see `core/src/test/` for examples
+4. **Test both success and error cases**
+
+<Tip>
+  Look at existing tests in `core/src/test/` for examples of how to structure your tests. Common test utilities are available in `core/src/test/common/`.
+</Tip>
+
+### Code Style
+
+- **Format your code** with rustfmt:
+  ```bash
+  cargo fmt
+  ```
+
+- **Check for common issues** with clippy:
+  ```bash
+  cargo clippy --all-features
+  ```
+
+- **Follow Rust naming conventions**:
+  - `snake_case` for functions, variables, and modules
+  - `PascalCase` for types and traits
+  - `SCREAMING_SNAKE_CASE` for constants
+
+- **Write clear, descriptive comments**:
+  - Document public APIs with `///` doc comments
+  - Explain complex logic with inline comments
+  - Reference related issues or RFCs when relevant
+
+- **Keep functions focused**: Each function should do one thing well
+
+- **Handle errors properly**: Use `Result` and propagate errors with `?` where appropriate
+
+## Submitting Changes
+
+### Pull Request Process
+
+1. **Commit your changes** with clear, descriptive commit messages:
+   ```bash
+   git add .
+   git commit -m "feat: add support for X"
+   # or
+   git commit -m "fix: resolve issue with Y (#123)"
+   ```
+
+2. **Push to your fork**:
+   ```bash
+   git push origin your-branch-name
+   ```
+
+3. **Open a Pull Request** on GitHub with:
+   - **Clear title** describing the change
+   - **Description** of what changed and why
+   - **Linked issues** (use "Closes #123" to auto-close issues)
+   - **Testing details** - how you tested the changes
+   - **Documentation updates** - if you changed documented interfaces
+
+### Pull Request Template
+
+When you create a PR, fill out the template with:
+
+```markdown
+# Description
+
+Describe what this pull request does.
+
+## Linked Issues
+
+- Closes #(issue number)
+- Related to #(issue number)
+
+## Testing
+
+Describe how these changes were tested. If you've added new features, 
+have you added unit tests?
+
+## Docs
+
+Describe where this code is documented. If it changes a documented 
+interface, have the docs been updated?
+```
+
+### Commit Message Guidelines
+
+Use conventional commit messages:
+
+- `feat:` - New features
+- `fix:` - Bug fixes
+- `docs:` - Documentation changes
+- `test:` - Adding or updating tests
+- `refactor:` - Code refactoring
+- `perf:` - Performance improvements
+- `chore:` - Maintenance tasks
+
+Examples:
+```bash
+feat: implement withdrawal timeout mechanism
+fix: resolve race condition in musig2 nonce aggregation (#456)
+docs: update configuration examples in usage.md
+test: add integration tests for deposit flow
+```
+
+## Code Review Process
+
+### What to Expect
+
+1. **Code owners review**: PRs are reviewed by [@chainwayxyz/clementine-bdfl](https://github.com/orgs/chainwayxyz/teams/clementine-bdfl)
+2. **CI/CD checks**: Automated tests and linting must pass
+3. **Infrastructure changes**: Changes to `.github/**`, `.gitsecret/**`, or `devops/**` require review from [@chainwayxyz/ops-bdfl](https://github.com/orgs/chainwayxyz/teams/ops-bdfl)
+
+### Review Guidelines
+
+Reviewers will check for:
+
+- **Code quality**: Is the code clear, maintainable, and well-structured?
+- **Tests**: Are there sufficient tests? Do they cover edge cases?
+- **Documentation**: Are public APIs documented? Are changes reflected in docs?
+- **Security**: Are there any security implications?
+- **Performance**: Are there any performance concerns?
+- **Breaking changes**: Are breaking changes justified and well-documented?
+
+<Tip>
+  Be responsive to feedback and be open to suggestions. Code review is a collaborative process to improve code quality.
+</Tip>
+
+## Types of Contributions
+
+### Bug Reports
+
+Found a bug? Help us fix it!
+
+1. **Search existing issues** to avoid duplicates
+2. **Create a new issue** with:
+   - Clear, descriptive title
+   - Steps to reproduce
+   - Expected vs actual behavior
+   - Environment details (OS, Rust version, Clementine version)
+   - Error messages and logs
+   - Minimal reproduction case if possible
+
+### Feature Requests
+
+Have an idea for a new feature?
+
+1. **Check existing issues** to see if it's already proposed
+2. **Open a discussion** or issue describing:
+   - The problem you're trying to solve
+   - Your proposed solution
+   - Alternative approaches considered
+   - Potential impact on existing functionality
+
+### Documentation Improvements
+
+Documentation is always welcome!
+
+- Fix typos or clarify confusing sections
+- Add examples for common use cases
+- Improve API documentation
+- Translate documentation (if applicable)
+
+### Code Contributions
+
+Contributions can include:
+
+- Bug fixes
+- New features
+- Performance improvements
+- Code refactoring
+- Test coverage improvements
+
+## Security Reporting
+
+<Warning>
+  **Do not** open public GitHub issues for security vulnerabilities.
+</Warning>
+
+If you discover a security vulnerability:
+
+1. **Email the security team** at: `security@citrea.xyz`
+
+2. **Encrypt sensitive reports** using the GPG key:
+   ```
+   -----BEGIN PGP PUBLIC KEY BLOCK-----
+   
+   mQINBGhZQXgBEADs4X61A9OcXJ1vbsFwq/tCm8FVCjHx9KADZ7WRht4Tr/4tlrXP
+   [... full key available in SECURITY.md ...]
+   ```
+   
+   Full GPG key is available in the [SECURITY.md](https://github.com/chainwayxyz/clementine/blob/main/SECURITY.md) file.
+
+3. **Include in your report**:
+   - Description of the vulnerability
+   - Steps to reproduce
+   - Potential impact
+   - Suggested fix (if you have one)
+
+4. **Wait for response** before public disclosure
+
+## Helper Scripts
+
+The `scripts/` directory contains helpful utilities:
+
+- `generate_certs.sh` - Generate TLS certificates for testing
+- `docker/` - Docker and docker-compose configurations
+- Various testing and setup scripts
+
+<Note>
+  Each script includes comments explaining its purpose. Check individual scripts for usage details.
+</Note>
+
+## Building for Production
+
+When building for production deployment:
+
+```bash
+# Build with automation features
+cargo build --release --features automation
+
+# Binary will be at:
+./target/release/clementine-core
+```
+
+The `automation` feature enables:
+- State Manager - Automatic duty fulfillment
+- Transaction Sender - Automatic transaction management
+
+## Resources
+
+- **Source Code**: [github.com/chainwayxyz/clementine](https://github.com/chainwayxyz/clementine)
+- **Issue Tracker**: [GitHub Issues](https://github.com/chainwayxyz/clementine/issues)
+- **API Docs**: [chainwayxyz.github.io/clementine/clementine_core](https://chainwayxyz.github.io/clementine/clementine_core/)
+- **Whitepaper**: [citrea.xyz/clementine_whitepaper.pdf](https://citrea.xyz/clementine_whitepaper.pdf)
+- **Discord**: [discord.gg/citrea](https://discord.gg/citrea)
+
+## Questions?
+
+If you have questions about contributing:
+
+1. Check the [FAQ](/resources/faq) and [Troubleshooting](/resources/troubleshooting) guides
+2. Search [existing issues](https://github.com/chainwayxyz/clementine/issues)
+3. Ask in the [Citrea Discord](https://discord.gg/citrea)
+4. Open a [GitHub Discussion](https://github.com/chainwayxyz/clementine/discussions)
+
+<Tip>
+  Thank you for contributing to Clementine! Your contributions help make Bitcoin DeFi more accessible and secure.
+</Tip>

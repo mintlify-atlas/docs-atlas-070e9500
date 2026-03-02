@@ -1,0 +1,101 @@
+---
+title: Prerequisites
+description: System requirements and dependencies needed to build and run Clementine
+---
+
+Before building and running Clementine, ensure your system meets the following requirements and has the necessary dependencies installed.
+
+## System Requirements
+
+Clementine requires:
+
+- **Rust**: Version 1.88.0 or later
+- **RISC Zero**: Version 2.1.0
+- **Bitcoin Core**: Version 29.0 or later
+- **PostgreSQL**: Version 15 or later
+
+### Minimum Stack Size
+
+<Warning>
+Clementine requires a minimum stack size of 33,554,432 bytes (32 MB) to run properly.
+</Warning>
+
+You must set the `RUST_MIN_STACK` environment variable:
+
+```bash
+export RUST_MIN_STACK=33554432
+```
+
+## Platform-Specific Dependencies
+
+### macOS
+
+On macOS, you need to install Xcode and its command-line tools:
+
+```bash
+xcode-select --install
+```
+
+<Note>
+Install Xcode from the App Store if the `xcrun metal` command gives an error.
+</Note>
+
+### Ubuntu/Debian
+
+On Ubuntu and Debian-based systems, install the build essentials and development libraries:
+
+```bash
+sudo apt install build-essential libssl-dev pkg-config
+```
+
+## External Services
+
+Before running Clementine, you'll need to set up the following services:
+
+### Bitcoin Node
+
+Clementine requires a Bitcoin node running version 29.0 or later. Configure your node with:
+
+- RPC server enabled
+- Proper authentication credentials
+- Appropriate network mode (mainnet, testnet4, or regtest)
+
+### PostgreSQL Database
+
+You need a PostgreSQL database (version 15 or later) for storing Clementine's state and transaction data. The database can be shared between services run by the same entity.
+
+### Citrea RPC (Optional)
+
+If you're integrating with Citrea, you'll need:
+
+- Citrea RPC URL
+- Citrea Light Client Prover URL
+- Bridge contract address
+
+## Development vs Production
+
+### Development Mode
+
+For development and testing, you can enable RISC Zero's development mode:
+
+```bash
+export RISC0_DEV_MODE=1
+```
+
+<Warning>
+Never use `RISC0_DEV_MODE=1` in production environments. This mode skips actual proof generation and is only suitable for testing.
+</Warning>
+
+### Production Requirements
+
+For production deployments:
+
+- Valid TLS certificates (not self-signed)
+- Proper certificate rotation policies
+- Production-grade Bitcoin node
+- Production-grade PostgreSQL database with appropriate connection limits
+- BitVM cache files (optional but recommended)
+
+## Next Steps
+
+Once you've verified your system meets these prerequisites, proceed to [Installation](/getting-started/installation) to install Rust, RISC Zero, and build Clementine.

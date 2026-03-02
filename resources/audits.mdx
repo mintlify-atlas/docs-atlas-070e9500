@@ -1,0 +1,101 @@
+---
+title: Security audits
+description: Independent security audit reports for Clementine
+---
+
+# Security audits
+
+Clementine has undergone independent security audits to ensure the integrity and security of the bridge implementation.
+
+## Audit reports
+
+### Sigma Prime security assessment
+
+Sigma Prime conducted a comprehensive security assessment of Clementine, reviewing the bridge architecture, cryptographic implementations, and potential attack vectors.
+
+**Download:** [Sigma Prime Security Assessment Report (PDF)](https://github.com/chainwayxyz/clementine/blob/main/audits/Sigma_Prime_Chainway_Labs_Clementine_Security_Assessment_Report_v2_0.pdf)
+
+**Key findings:**
+- Reviewed core bridge logic and actor implementations
+- Analyzed cryptographic primitives (MuSig2, Winternitz signatures)
+- Evaluated BitVM2 integration and challenge mechanisms
+- Assessed economic incentive structures
+
+### Cantina competition
+
+Clementine participated in a Cantina security competition where multiple security researchers reviewed the codebase for vulnerabilities.
+
+**Download:** [Cantina Competition Report (PDF)](https://github.com/chainwayxyz/clementine/blob/main/audits/cantina-competition-report.pdf)
+
+**Competition details:**
+- Community-driven security review
+- Multiple independent researchers
+- Focused on edge cases and potential exploits
+
+## Audit scope
+
+The security audits covered:
+
+<CardGroup cols={2}>
+  <Card title="Core bridge logic" icon="bridge">
+    Deposit and withdrawal flows, transaction signing, state management
+  </Card>
+  <Card title="Actor implementations" icon="users">
+    Verifier, Operator, Aggregator, and Watchtower behavior
+  </Card>
+  <Card title="Cryptographic primitives" icon="lock">
+    MuSig2, Winternitz signatures, Schnorr signatures
+  </Card>
+  <Card title="Circuit implementations" icon="microchip">
+    Bridge Circuit, Header Chain Circuit, Work Only Circuit
+  </Card>
+  <Card title="Economic mechanisms" icon="coins">
+    Fee structures, collateral requirements, incentive alignment
+  </Card>
+  <Card title="Challenge-response" icon="shield-exclamation">
+    Watchtower challenges, operator responses, dispute resolution
+  </Card>
+</CardGroup>
+
+## Remediation
+
+All critical and high-severity findings from the audits have been addressed. The audit reports include:
+
+- Detailed descriptions of findings
+- Severity classifications
+- Recommended remediations
+- Implementation status
+
+<Note>
+  The audit reports are available in the [Clementine repository](https://github.com/chainwayxyz/clementine/tree/main/audits).
+</Note>
+
+## Continuous security
+
+In addition to formal audits, Clementine maintains security through:
+
+- **Bug bounty program** - Rewards for responsible disclosure of vulnerabilities
+- **Code reviews** - All changes undergo peer review before merging
+- **Automated testing** - Comprehensive test coverage for critical paths
+- **Security monitoring** - Continuous monitoring of mainnet deployments
+
+<Warning>
+  If you discover a security vulnerability, please report it responsibly through our [security disclosure process](/security#vulnerability-disclosure).
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Security model" icon="shield-halved" href="/security">
+    Understand Clementine's security architecture
+  </Card>
+  <Card title="Threat analysis" icon="magnifying-glass" href="/security#threat-model">
+    Review potential attack vectors and mitigations
+  </Card>
+  <Card title="Report vulnerability" icon="bug" href="https://github.com/chainwayxyz/clementine/security/advisories/new">
+    Report security issues responsibly
+  </Card>
+  <Card title="Source code" icon="code" href="https://github.com/chainwayxyz/clementine">
+    Review the implementation yourself
+  </Card>
+</CardGroup>

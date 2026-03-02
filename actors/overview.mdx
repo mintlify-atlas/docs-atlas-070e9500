@@ -1,0 +1,189 @@
+---
+title: 'Actor Model Overview'
+description: 'Understanding the actor-based architecture in Clementine'
+---
+
+Clementine uses an actor-based architecture to implement the Bitcoin bridge protocol. Each actor has specific roles and responsibilities in the deposit and withdrawal lifecycle.
+
+## Core Actor Types
+
+The Clementine protocol consists of three primary actor types:
+
+<CardGroup cols={3}>
+  <Card title="Verifier" icon="shield-check" href="/actors/verifier">
+    Validates deposits and provides partial signatures for N-of-N multisig transactions
+  </Card>
+  <Card title="Operator" icon="gears" href="/actors/operator">
+    Manages collateral, processes withdrawals, and generates cryptographic commitments
+  </Card>
+  <Card title="Aggregator" icon="network-wired" href="/actors/aggregator">
+    Coordinates communication between verifiers and operators to finalize deposits
+  </Card>
+</CardGroup>
+
+## Actor Base Structure
+
+All actors share a common foundation defined in `core/src/actor.rs`:
+
+```rust
+pub struct Actor {
+    pub keypair: Keypair,
+    pub xonly_public_key: XOnlyPublicKey,
+    pub public_key: PublicKey,
+    pub address: Address,
+}
+```
+
+### Key Capabilities
+
+Every actor can:
+
+- **Sign transactions** using Schnorr signatures with taproot support
+- **Manage tweaked keys** for script and key path spends
+- **Generate Winternitz signatures** for BitVM assertions
+- **Derive cryptographic keys** using HKDF for various protocol operations
+
+## State Management
+
+Each actor type maintains its own state:
+
+### Database State
+
+- **Operators**: Track collateral UTXOs, kickoff transactions, and round indices
+- **Verifiers**: Store operator public keys, deposit data, and partial signatures
+- **Aggregators**: Cache verifier and operator keys for coordination
+
+### Nonce Management
+
+Verifiers maintain nonce sessions for MuSig2 signing:
+
+```rust
+pub struct NonceSession {
+    pub nonces: Vec<SecretNonce>,
+}
+
+pub struct AllSessions {
+    sessions: HashMap<u128, NonceSession>,
+    session_queue: VecDeque<u128>,
+    used_ids: HashSet<u128>,
+}
+```
+
+- Maximum session size: Configurable via `MAX_ALL_SESSIONS_BYTES`
+- Maximum sessions: `MAX_NUM_SESSIONS` (prevents memory exhaustion)
+- Session IDs are randomly generated to prevent prediction attacks
+
+## Signing Architecture
+
+### Taproot Signing
+
+Actors support both key path and script path spends:
+
+**Key Path Spend**: Uses tweaked keys with merkle root
+```rust
+fn sign_with_tweak(
+    &self,
+    sighash: TapSighash,
+    merkle_root: Option<TapNodeHash>,
+    tweak_cache: Option<&mut TweakCache>,
+) -> Result<schnorr::Signature, BridgeError>
+```
+
+**Script Path Spend**: Direct schnorr signature
+```rust
+fn sign(&self, sighash: TapSighash) -> schnorr::Signature
+```
+
+### Winternitz Key Derivation
+
+Actors derive Winternitz keys for different purposes:
+
+- **Kickoff transactions**: Commit to blockhashes
+- **BitVM assertions**: Prove computation correctness
+- **Challenge acknowledgments**: Watchtower responses
+
+Derivation uses HKDF with structured paths:
+
+```rust
+pub enum WinternitzDerivationPath {
+    Kickoff(RoundIndex, u32, &'static ProtocolParamset),
+    BitvmAssert(u32, u32, u32, OutPoint, &'static ProtocolParamset),
+    ChallengeAckHash(u32, OutPoint, &'static ProtocolParamset),
+}
+```
+
+## Tweak Cache Optimization
+
+Actors use a cache to avoid recomputing tweaked keys:
+
+```rust
+pub struct TweakCache {
+    tweaked_key_cache: HashMap<(XOnlyPublicKey, Option<TapNodeHash>), XOnlyPublicKey>,
+    tweaked_keypair_cache: HashMap<(XOnlyPublicKey, Option<TapNodeHash>), Keypair>,
+}
+```
+
+This cache is particularly important when:
+- Signing multiple inputs in a single transaction
+- Verifying signatures from multiple parties
+- Processing deposits with many operators
+
+## Communication Patterns
+
+### Verifier ↔ Aggregator
+
+1. Verifier generates nonces via `nonce_gen(num_nonces)`
+2. Aggregator collects and aggregates nonces
+3. Verifier provides partial signatures via `deposit_sign()`
+4. Aggregator validates and combines signatures
+
+### Operator ↔ Aggregator
+
+1. Operator provides public keys via `get_params()`
+2. Aggregator distributes keys to verifiers
+3. Operator signs deposit transactions via `deposit_sign()`
+4. Aggregator finalizes deposit after collecting all signatures
+
+### Operator ↔ User
+
+1. User requests withdrawal with signature
+2. Operator validates profitability
+3. Operator funds and broadcasts payout transaction
+4. Operator triggers kickoff for reimbursement
+
+## Security Considerations
+
+### Key Isolation
+
+Each actor:
+- Uses a unique secret key derived from configuration
+- Maintains separate EVM addresses for Citrea operations
+- Never shares private keys with other actors
+
+### Signature Verification
+
+Before using any signature, actors verify:
+- Correct public key
+- Valid sighash for the transaction
+- Appropriate tweak data (key path vs script path)
+
+### Nonce Security
+
+Verifiers implement nonce session limits to prevent:
+- Memory exhaustion attacks
+- Nonce reuse vulnerabilities
+- Session hijacking
+
+## Next Steps
+
+<CardGroup cols={3}>
+  <Card title="Verifier Details" icon="shield-check" href="/actors/verifier">
+    Learn about deposit validation and signature generation
+  </Card>
+  <Card title="Operator Details" icon="gears" href="/actors/operator">
+    Understand collateral management and withdrawals
+  </Card>
+  <Card title="Aggregator Details" icon="network-wired" href="/actors/aggregator">
+    Explore coordination and key distribution
+  </Card>
+</CardGroup>

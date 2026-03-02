@@ -1,0 +1,425 @@
+---
+title: Architecture
+description: Understand Clementine's system architecture, core components, and how actors interact to create a trust-minimized Bitcoin bridge.
+---
+
+# System architecture
+
+Clementine's architecture is designed around a distributed actor model where independent services communicate via gRPC to facilitate secure, trust-minimized bridging between Bitcoin and Citrea L2.
+
+## High-level overview
+
+The bridge operates through three main processes:
+
+1. **Deposit (Peg-in)** - Users lock BTC on Bitcoin, which is minted on Citrea L2
+2. **Withdrawal (Peg-out)** - Users burn tokens on Citrea L2 to unlock BTC on Bitcoin
+3. **Challenge-Response** - Watchtowers monitor operators and challenge suspicious activity
+
+<Note>
+  All bridge operations are enforced through pre-signed Bitcoin transactions, creating a deterministic "game tree" that automates the BitVM2 challenge-response process.
+</Note>
+
+## Core actors
+
+Clementine's architecture consists of four primary actors, each serving a distinct role:
+
+### Verifier (Signer)
+
+Verifiers participate in the signing ceremony using MuSig2 to collectively authorize bridge operations.
+
+**Responsibilities:**
+- Participate in nonce aggregation rounds
+- Provide partial signatures for deposit finalization
+- Sign move transaction inputs
+- Maintain partial signature state in the database
+
+**Communication:**
+- Receives requests from the aggregator via gRPC
+- Uses mTLS for authenticated connections
+- Enforces that only the aggregator can call verifier methods
+
+```rust
+// From core/src/verifier.rs
+pub struct Verifier {
+    pub config: BridgeConfig,
+    pub bitcoin_client: Arc<ExtendedBitcoinRpc>,
+    pub database: Arc<Database>,
+    // ...
+}
+```
+
+### Operator
+
+Operators process deposits and withdrawals, creating payout transactions and managing the bridge flow.
+
+**Responsibilities:**
+- Monitor deposit transactions
+- Create payout (fronting) transactions for withdrawals
+- Generate and submit Header Chain Proofs (HCP)
+- Respond to watchtower challenges
+- Maintain operator collateral
+
+**Verification requirements:**
+- Must prove withdrawal validity using the Bridge Circuit
+- Must acknowledge all watchtower challenges
+- Must provide higher total work than any watchtower
+
+<Warning>
+  Operators who fail to prove correctness or ignore challenges will have their collateral slashed.
+</Warning>
+
+### Aggregator
+
+The aggregator coordinates the MuSig2 signing ceremony, collecting and aggregating nonces and signatures from verifiers.
+
+**Responsibilities:**
+- Orchestrate three-step deposit finalization:
+  1. Nonce aggregation
+  2. Signature aggregation  
+  3. Move transaction creation
+- Broadcast aggregated nonces to all verifiers
+- Combine partial signatures into final Schnorr signatures
+- Submit finalized transactions to the Bitcoin network
+
+**Communication:**
+- Connects to all verifiers via gRPC
+- Uses TLS for encryption (does not enforce client certificates)
+- Identified by aggregator-specific client certificate
+
+```rust
+// From core/src/aggregator.rs
+pub struct Aggregator {
+    pub config: BridgeConfig,
+    pub bitcoin_client: Arc<ExtendedBitcoinRpc>,
+    pub database: Arc<Database>,
+    // ...
+}
+```
+
+### Watchtower
+
+Watchtowers monitor operator behavior and submit challenges when detecting suspicious activity.
+
+**Responsibilities:**
+- Monitor operator payout transactions
+- Verify operator claims against canonical Bitcoin chain
+- Submit Work-Only Proofs (WOP) to challenge operators
+- Earn rewards for successful challenges
+
+**Challenge mechanism:**
+1. Watchtower detects potentially malicious operator behavior
+2. Submits a challenge transaction with Work-Only Proof
+3. Operator must acknowledge challenge and prove correctness
+4. If operator fails, watchtower can claim the operator's collateral
+
+<Info>
+  Watchtowers use a lightweight "Work-Only Circuit" that proves Bitcoin chain work without the full verification complexity of the Bridge Circuit.
+</Info>
+
+## Component architecture
+
+### Core library
+
+The main `clementine-core` binary acts as a server starter for all actors:
+
+```bash
+# Start different actors from the same binary
+clementine-core verifier --config config.toml
+clementine-core operator --config config.toml
+clementine-core aggregator --config config.toml
+```
+
+**Module structure:**
+
+- `actor` - Common utilities for all actors
+- `operator`, `verifier`, `aggregator` - Actor-specific logic
+- `builder` - Transaction building utilities
+- `rpc` - gRPC server implementations
+- `database` - PostgreSQL interface
+- `task` - Background task management
+
+### Supporting crates
+
+Clementine is organized into multiple specialized crates:
+
+```
+crates/
+├── clementine-config      # Configuration management
+├── clementine-errors      # Error types and handling
+├── clementine-primitives  # Core data structures
+├── clementine-utils       # Shared utilities
+├── clementine-extended-rpc # Bitcoin RPC extensions
+└── clementine-tx-sender   # Transaction broadcasting
+```
+
+### Circuit library
+
+The `circuits-lib` crate contains the core circuit logic used by all three RISC Zero circuits:
+
+```
+circuits-lib/
+└── src/
+    ├── bridge_circuit/     # Main bridge verification
+    ├── header_chain/       # Block header verification
+    └── work_only/          # Lightweight work verification
+```
+
+### RISC Zero circuits
+
+Three circuits provide zero-knowledge verification:
+
+**Header Chain Circuit** (`risc0-circuits/header-chain/`)
+- Verifies Bitcoin block header chains
+- Computes cumulative proof-of-work
+- Validates MMR (Merkle Mountain Range) inclusion
+
+**Work-Only Circuit** (`risc0-circuits/work-only/`)
+- Lightweight version for watchtower challenges
+- Verifies proof-of-work without full state verification
+- Generates compact Groth16 proofs
+
+**Bridge Circuit** (`risc0-circuits/bridge-circuit/`)
+- Verifies complete withdrawal operations
+- Validates Header Chain Proofs from operator
+- Processes watchtower challenges
+- Verifies SPV proofs and Light Client Proofs
+- Checks EVM storage proofs against Citrea state
+
+<Note>
+  Circuit method IDs are network-specific and determined at compile time based on the `BITCOIN_NETWORK` environment variable.
+</Note>
+
+## Data flow
+
+### Deposit flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant B as Bitcoin
+    participant V as Verifiers
+    participant A as Aggregator
+    participant C as Citrea L2
+    
+    U->>B: Lock BTC in deposit address
+    A->>V: Request nonces
+    V->>A: Return nonces
+    A->>A: Aggregate nonces
+    A->>V: Send aggregated nonce
+    V->>A: Return partial signatures
+    A->>A: Aggregate signatures
+    A->>V: Request move tx signatures
+    V->>A: Return move tx signatures
+    A->>B: Broadcast move transaction
+    B->>C: Bridge contract mints tokens
+```
+
+### Withdrawal flow
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as Citrea L2
+    participant O as Operator
+    participant W as Watchtower
+    participant B as Bitcoin
+    
+    U->>C: Burn tokens on Citrea
+    O->>B: Create payout transaction
+    O->>B: Submit KickOff tx with WOTS commitment
+    W->>W: Monitor operator behavior
+    alt Operator is honest
+        W->>W: No challenge needed
+        O->>B: Complete withdrawal
+    else Operator is malicious
+        W->>B: Submit challenge transaction
+        O->>B: Must prove correctness
+        alt Proof fails
+            W->>B: Disprove and claim collateral
+        end
+    end
+```
+
+## Communication layer
+
+### gRPC protocol
+
+All actors communicate using gRPC defined in `core/src/rpc/clementine.proto`:
+
+```protobuf
+service Verifier {
+  rpc GetNonces(NonceRequest) returns (NonceResponse);
+  rpc GetSignatures(SignatureRequest) returns (SignatureResponse);
+  // ...
+}
+
+service Aggregator {
+  rpc NewDeposit(DepositRequest) returns (DepositResponse);
+  // ...
+}
+```
+
+### mTLS authentication
+
+Clementine uses mutual TLS to secure and authenticate gRPC connections:
+
+**Certificate types:**
+- `ca.pem` - Certificate Authority for validation
+- `server.pem` - Server certificate for TLS encryption
+- `client.pem` - Client certificate for internal calls
+- `aggregator.pem` - Aggregator-specific client certificate
+
+**Authentication rules:**
+- Verifier/Operator methods can only be called by the aggregator
+- Internal methods require the entity's own client certificate
+- Aggregator uses TLS for encryption but doesn't enforce client certificates
+
+<Warning>
+  For production deployments, use certificates signed by a trusted CA rather than self-signed certificates. Keep private keys secure and rotate regularly.
+</Warning>
+
+## Storage layer
+
+Clementine uses PostgreSQL for persistent storage with the following characteristics:
+
+**Database usage:**
+- Actors can share the same database or use separate instances
+- Schema migrations managed via SQLx
+- Connection pooling for performance
+
+**Stored data:**
+- Partial signatures and nonces
+- Transaction state and history
+- Deposit and withdrawal tracking
+- Block synchronization state
+- Challenge and proof data
+
+```toml
+# Database configuration
+[database]
+url = "postgresql://user:password@localhost/clementine"
+max_connections = 100
+```
+
+## Background tasks
+
+When built with the `automation` feature, Clementine runs several background tasks:
+
+### Bitcoin syncer
+
+Monitors the Bitcoin blockchain for relevant transactions and blocks.
+
+**Responsibilities:**
+- Track deposit transactions
+- Monitor confirmation depth
+- Detect challenge transactions
+- Update local block state
+
+### Transaction sender
+
+Manages transaction broadcasting to the Bitcoin network.
+
+**Features:**
+- Automatic retry logic
+- Fee estimation and RBF support
+- Transaction type-specific handling
+- Mempool monitoring
+
+### State manager
+
+Implements state machines for complex multi-step operations.
+
+**States managed:**
+- Deposit finalization flow
+- Withdrawal processing
+- Challenge-response cycles
+
+### Header chain prover
+
+Generates zero-knowledge proofs for Bitcoin block headers.
+
+**Process:**
+1. Accept new block headers
+2. Verify proof-of-work
+3. Generate RISC Zero proof
+4. Convert to Groth16 for on-chain verification
+
+## External integrations
+
+### Bitcoin node
+
+Clementine requires a Bitcoin Core node (v29.0 or later) with:
+- Full transaction index (`txindex=1`)
+- RPC access enabled
+- Wallet functionality for transaction signing
+
+### Citrea L2
+
+Integrates with Citrea rollup for:
+- Bridge contract interaction
+- Light Client Proof verification
+- EVM storage proof validation
+- Token minting/burning events
+
+### BitVM client
+
+Handles BitVM-specific operations:
+- Pre-signed transaction management
+- Winternitz signature operations
+- Connector UTXO handling
+- Disprove script execution
+
+## Deployment topologies
+
+### Single entity deployment
+
+A typical entity runs multiple services on the same host:
+
+**Operator entity:**
+```bash
+# Run both operator and verifier
+clementine-core operator --config config.toml &
+clementine-core verifier --config config.toml &
+```
+
+**Verifier-only entity:**
+```bash
+# Run only verifier service
+clementine-core verifier --config config.toml
+```
+
+**Aggregator entity:**
+```bash
+# Run aggregator and verifier
+clementine-core aggregator --config config.toml &
+clementine-core verifier --config config.toml &
+```
+
+### Distributed deployment
+
+For production, actors can be distributed across multiple hosts with:
+- Load-balanced gRPC endpoints
+- Replicated PostgreSQL databases
+- Redundant Bitcoin node connections
+- High-availability TLS certificate management
+
+<Info>
+  Docker Compose files are available in `scripts/docker/` for various deployment scenarios including testnet4 and regtest configurations.
+</Info>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Design principles" icon="compass-drafting" href="/design">
+    Learn about the technical design decisions
+  </Card>
+  <Card title="Security" icon="shield-halved" href="/security">
+    Understand the security model
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/getting-started/quickstart">
+    Deploy your first Clementine node
+  </Card>
+  <Card title="Configuration" icon="gear" href="/getting-started/configuration">
+    Configure actors for your deployment
+  </Card>
+</CardGroup>

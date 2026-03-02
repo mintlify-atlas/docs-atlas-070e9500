@@ -1,0 +1,203 @@
+---
+title: "Deposit"
+description: "Deposit data model and related structures for Clementine protocol"
+---
+
+The Deposit model represents a user's deposit UTXO and associated metadata in the Clementine protocol.
+
+## Deposit
+
+Core deposit structure containing the deposit outpoint and deposit-specific data.
+
+<ParamField body="deposit_outpoint" type="Outpoint" required>
+  User's deposit UTXO
+  
+  <Expandable title="Outpoint fields">
+    <ResponseField name="txid" type="Txid" required>
+      Transaction ID (bytes)
+    </ResponseField>
+    <ResponseField name="vout" type="uint32" required>
+      Output index
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="base_deposit" type="BaseDeposit">
+  New original deposit request details (one of base_deposit or replacement_deposit)
+  
+  <Expandable title="BaseDeposit fields">
+    <ResponseField name="evm_address" type="bytes" required>
+      User's EVM address on Citrea
+    </ResponseField>
+    <ResponseField name="recovery_taproot_address" type="string" required>
+      User's recovery taproot address for emergency scenarios
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="replacement_deposit" type="ReplacementDeposit">
+  Replacement deposit details (one of base_deposit or replacement_deposit)
+  
+  <Expandable title="ReplacementDeposit fields">
+    <ResponseField name="old_move_txid" type="Txid" required>
+      Move-to-vault transaction ID that is being replaced
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<Info>
+  A deposit contains either `base_deposit` for new deposits or `replacement_deposit` for deposits replacing existing move-to-vault transactions.
+</Info>
+
+---
+
+## DepositParams
+
+Complete deposit parameters including deposit details, actors, and security council configuration.
+
+<ParamField body="deposit" type="Deposit" required>
+  Core deposit information
+</ParamField>
+
+<ParamField body="actors" type="Actors" required>
+  Participating actors in the deposit
+  
+  <Expandable title="Actors fields">
+    <ResponseField name="verifiers" type="VerifierPublicKeys" required>
+      Public keys of verifiers participating in the deposit
+      
+      <Expandable title="VerifierPublicKeys fields">
+        <ResponseField name="verifier_public_keys" type="repeated bytes" required>
+          Array of verifier public keys
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="watchtowers" type="XOnlyPublicKeys" required>
+      X-only public keys of additional watchtowers (verifiers are automatically considered watchtowers)
+      
+      <Expandable title="XOnlyPublicKeys fields">
+        <ResponseField name="xonly_public_keys" type="repeated bytes" required>
+          Array of x-only public keys
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="operators" type="XOnlyPublicKeys" required>
+      X-only public keys of operators participating in the deposit
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="security_council" type="SecurityCouncil" required>
+  Security council configuration
+  
+  <Expandable title="SecurityCouncil fields">
+    <ResponseField name="pks" type="repeated bytes" required>
+      Array of security council public keys
+    </ResponseField>
+    <ResponseField name="threshold" type="uint32" required>
+      Threshold number of signatures required from security council
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+---
+
+## DepositSignSession
+
+Session data for deposit signing including deposit parameters and nonce generation responses.
+
+<ParamField body="deposit_params" type="DepositParams" required>
+  Complete deposit parameters
+</ParamField>
+
+<ParamField body="nonce_gen_first_responses" type="repeated NonceGenFirstResponse" required>
+  Nonce generation initial responses from all verifiers
+  
+  <Expandable title="NonceGenFirstResponse fields">
+    <ResponseField name="id" type="string" required>
+      Nonce session ID (string representation of u128 number)
+    </ResponseField>
+    <ResponseField name="num_nonces" type="uint32" required>
+      Number of nonces generated
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<Info>
+  Used during the MuSig2 signing protocol to coordinate nonce generation across all verifiers.
+</Info>
+
+---
+
+## DepositSignatures
+
+Collection of tagged signatures for deposit transactions.
+
+<ParamField body="signatures" type="repeated TaggedSignature" required>
+  Array of tagged signatures identifying the transaction input each signature is for
+</ParamField>
+
+---
+
+## Related Models
+
+### Outpoint
+
+References a specific output of a Bitcoin transaction.
+
+<ResponseField name="txid" type="Txid" required>
+  Transaction ID (bytes)
+</ResponseField>
+
+<ResponseField name="vout" type="uint32" required>
+  Output index (0-based)
+</ResponseField>
+
+### Outpoints
+
+Collection of multiple outpoints.
+
+<ResponseField name="outpoints" type="repeated Outpoint" required>
+  Array of outpoints
+</ResponseField>
+
+### Txid
+
+Bitcoin transaction identifier.
+
+<ResponseField name="txid" type="bytes" required>
+  32-byte transaction ID
+</ResponseField>
+
+---
+
+## Example Usage
+
+### Base Deposit
+
+```json
+{
+  "deposit_outpoint": {
+    "txid": {"txid": "<32_bytes>"},
+    "vout": 0
+  },
+  "base_deposit": {
+    "evm_address": "<20_bytes_evm_address>",
+    "recovery_taproot_address": "bc1p..."
+  }
+}
+```
+
+### Replacement Deposit
+
+```json
+{
+  "deposit_outpoint": {
+    "txid": {"txid": "<32_bytes>"},
+    "vout": 1
+  },
+  "replacement_deposit": {
+    "old_move_txid": {"txid": "<32_bytes>"}
+  }
+}
+```

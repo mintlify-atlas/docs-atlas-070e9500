@@ -1,0 +1,611 @@
+---
+title: Security
+description: Understand Clementine's security model, threat vectors, and best practices for secure deployment and operation.
+---
+
+# Security considerations
+
+Clementine's security model leverages Bitcoin's security guarantees, cryptographic proofs, and economic incentives to create a trust-minimized bridge. This page covers the security mechanisms, threat model, and operational best practices.
+
+<Warning>
+  This documentation provides security guidance but does not constitute a security audit. Always conduct thorough security reviews before production deployment.
+</Warning>
+
+## Security model overview
+
+Clementine achieves trust minimization through multiple layers of security:
+
+### 1. Cryptographic security
+
+**Key deletion covenants:** Bridge funds are held in an N-of-N arrangement where participants delete their keys after pre-signing all possible transactions, making unauthorized fund movement cryptographically impossible.
+
+**Zero-knowledge proofs:** RISC Zero circuits and Groth16 proofs ensure operators can only complete withdrawals if they can prove correctness of their operations.
+
+**Signature aggregation:** MuSig2 provides N-of-N threshold signatures without revealing individual keys or requiring interactive coordination beyond the signing ceremony.
+
+### 2. Economic security
+
+**Operator collateral:** Operators must post collateral that can be slashed if malicious behavior is proven on-chain.
+
+**Watchtower incentives:** Watchtowers earn rewards for detecting and proving operator misbehavior, creating economic incentive for active monitoring.
+
+**Challenge costs:** The cost to challenge must be lower than the reward for successful challenges, ensuring rational actors will monitor and challenge.
+
+### 3. Bitcoin security
+
+**Immutable commitments:** WOTS signatures commit operator claims to Bitcoin's blockchain, making manipulation impossible.
+
+**Proof-of-work validation:** The bridge inherits Bitcoin's security by requiring operators to follow the canonical chain with the most cumulative work.
+
+**Time-locked governance:** Updates to the verifier set are time-locked, giving users an exit window if they don't trust changes.
+
+## Threat model
+
+### Trust assumptions
+
+Clementine's security relies on the following assumptions:
+
+**1-of-N honest verifier assumption**
+- At least one verifier must maintain key security
+- At least one verifier must refuse to sign invalid operations
+- If all N verifiers are compromised, deposited funds are at risk
+
+<Note>
+  Funds deposited under a previous verifier set remain secure even if the new set is fully compromised, due to the key deletion covenant design.
+</Note>
+
+**1-of-N honest watchtower assumption**
+- At least one watchtower must monitor operator behavior
+- At least one watchtower must submit challenges for invalid operations
+- Watchtowers must have access to the canonical Bitcoin blockchain
+
+**Honest operator availability**
+- At least one operator must continue processing deposits and withdrawals
+- If all operators stop, new operations halt but existing funds remain secure
+- The M-of-N governance can activate new operators through verifier set updates
+
+**Bitcoin security assumption**
+- Bitcoin's proof-of-work consensus remains secure
+- 51% attacks on Bitcoin could affect Clementine
+- Deep reorganizations could invalidate proofs
+
+### Attack vectors and mitigations
+
+#### 1. Malicious operator attacks
+
+**Attack:** Operator creates invalid payout transaction or follows wrong Bitcoin chain
+
+**Mitigation:**
+- Watchtowers monitor all operator actions
+- Operator must prove correctness using Bridge Circuit
+- Operator work must exceed all watchtower Work-Only Proofs
+- Incorrect proofs can be disproven on-chain, slashing operator
+
+**Detection:**
+```rust
+// Watchtowers verify operator follows canonical chain
+if operator_total_work <= max_watchtower_work {
+    // Operator is on wrong chain or lying
+    submit_challenge();
+}
+```
+
+#### 2. Censorship attacks
+
+**Attack:** Operator ignores watchtower challenges or valid withdrawal requests
+
+**Mitigation:**
+- Pre-signed ChallengeNACK transactions allow anyone to slash operators who ignore challenges
+- Watchtower challenge transaction spending is verified in Bridge Circuit
+- Multiple operators can process withdrawals
+
+**Enforcement:**
+- Bridge Circuit verifies `watchtower_sent_challenge` boolean array
+- Operator must acknowledge ALL challenges via ChallengeACK
+- Failure to acknowledge results in automatic slashing
+
+#### 3. Signer collusion
+
+**Attack:** All N verifiers collude to steal deposited funds
+
+**Mitigation:**
+- Key deletion covenant makes pre-signed transactions the only way to spend
+- Cannot create new unauthorized transactions
+- Verifier set updates are time-locked with user exit windows
+- Different entities should operate verifiers
+
+**Best practices:**
+- Geographic distribution of verifiers
+- Independent organizational control
+- Hardware security modules (HSMs) for key storage
+- Regular verifier rotation
+
+#### 4. Bridge circuit vulnerabilities
+
+**Attack:** Bugs in circuit logic allow invalid proofs to pass verification
+
+**Mitigation:**
+- Formal verification of critical circuit paths
+- Extensive fuzzing and property-based testing
+- Multiple independent watchtowers verify proofs
+- On-chain disprove mechanism catches invalid proofs
+- Open-source code review
+
+**Testing:**
+```rust
+#[test]
+fn test_bridge_circuit_rejects_invalid_work() {
+    // Operator work less than watchtower
+    assert!(bridge_circuit_fails_when(
+        operator_work < max_watchtower_work
+    ));
+}
+```
+
+#### 5. RISC Zero proof forgery
+
+**Attack:** Attacker generates fake Groth16 proofs
+
+**Mitigation:**
+- Method IDs are hardcoded and network-specific
+- Groth16 verification is cryptographically sound
+- On-chain verification in disprove scripts
+- Trusted setup for Groth16 (using RISC Zero's setup)
+
+**Verification:**
+```rust
+// Circuit verifies method ID matches expected value
+assert_eq!(
+    header_chain_proof.method_id,
+    EXPECTED_HEADER_CHAIN_IMAGE_ID
+);
+```
+
+#### 6. Database compromise
+
+**Attack:** Attacker gains access to PostgreSQL database
+
+**Mitigation:**
+- Database stores state, not private keys
+- Nonces are one-time use (MuSig2 security)
+- Private keys stored separately in secure key management
+- Database access controls and encryption
+
+**Impact if compromised:**
+- Partial signature exposure (not exploitable)
+- State manipulation (detectable, not fund-threatening)
+- Nonce reuse (preventable with key management)
+
+#### 7. gRPC man-in-the-middle
+
+**Attack:** Attacker intercepts gRPC communication between actors
+
+**Mitigation:**
+- Mutual TLS (mTLS) for all connections
+- Client certificate authentication
+- Certificate pinning for known entities
+- Encrypted transport (TLS 1.3)
+
+**Configuration:**
+```toml
+[rpc]
+server_cert_path = "certs/server/server.pem"
+server_key_path = "certs/server/server.key"
+ca_cert_path = "certs/ca/ca.pem"
+client_cert_path = "certs/client/client.pem"
+client_key_path = "certs/client/client.key"
+aggregator_cert_path = "certs/aggregator/aggregator.pem"
+```
+
+#### 8. Denial of service
+
+**Attack:** Attacker floods services with requests or spams Bitcoin blockchain
+
+**Mitigation:**
+- Rate limiting on gRPC endpoints
+- Transaction fee requirements on Bitcoin
+- Operator collateral creates spam cost
+- Database connection pooling
+- Resource limits on circuit proving
+
+**Resource protection:**
+```rust
+// Connection limits
+max_connections = 1000
+
+// Proof generation timeouts
+proof_timeout = 300 // seconds
+```
+
+## Operational security
+
+### Key management
+
+**Private key storage:**
+
+<Warning>
+  NEVER commit private keys to version control. Use `.gitignore` for all `*.key` files.
+</Warning>
+
+**Best practices:**
+
+1. **Hardware Security Modules (HSMs)** for verifier private keys
+2. **Separate key storage** from application servers
+3. **Key rotation** procedures for long-term keys
+4. **Multi-party computation (MPC)** for key generation
+5. **Secure backup** of key material with encryption
+
+**Key hierarchy:**
+```
+Verifier Master Key (HSM)
+  ├─ Signing Key (rotated monthly)
+  ├─ Backup Key (cold storage)
+  └─ Emergency Key (multi-sig controlled)
+```
+
+### TLS certificate management
+
+**Certificate lifecycle:**
+
+1. **Generation:** Use strong entropy and appropriate key sizes (RSA 4096 or ECDSA P-256)
+2. **Distribution:** Secure channels for certificate sharing
+3. **Rotation:** Rotate certificates every 90 days
+4. **Revocation:** Maintain CRL or OCSP for compromised certificates
+
+**Production certificates:**
+
+<Warning>
+  For production, use certificates signed by a trusted Certificate Authority, not self-signed certificates.
+</Warning>
+
+**Certificate storage:**
+```bash
+# Restrict certificate permissions
+chmod 600 certs/**/*.key
+chmod 644 certs/**/*.pem
+
+# Use dedicated certificate directory
+/etc/clementine/certs/
+  ├── ca/
+  ├── server/
+  ├── client/
+  └── aggregator/
+```
+
+**Certificate validation:**
+```rust
+// Verify certificate chain
+let client_cert = load_certificate(&config.client_cert_path)?;
+let ca_cert = load_certificate(&config.ca_cert_path)?;
+verify_cert_chain(&client_cert, &ca_cert)?;
+```
+
+### Database security
+
+**Access controls:**
+
+```sql
+-- Create dedicated database user
+CREATE USER clementine_verifier WITH PASSWORD 'strong_password';
+
+-- Grant minimal required permissions
+GRANT SELECT, INSERT, UPDATE ON clementine.* TO clementine_verifier;
+
+-- Revoke dangerous permissions
+REVOKE DROP, CREATE ON clementine.* FROM clementine_verifier;
+```
+
+**Connection security:**
+
+```toml
+[database]
+url = "postgresql://user:pass@localhost/clementine?sslmode=require"
+max_connections = 100
+ssl_cert = "/path/to/client-cert.pem"
+ssl_key = "/path/to/client-key.pem"
+ssl_root_cert = "/path/to/ca-cert.pem"
+```
+
+**Encryption at rest:**
+- Enable PostgreSQL encryption at rest (pgcrypto)
+- Encrypt sensitive columns (if storing any secrets)
+- Use encrypted volumes for database storage
+- Regular encrypted backups
+
+### Network security
+
+**Firewall rules:**
+
+```bash
+# Only allow gRPC from known IPs
+sudo ufw allow from 10.0.0.0/24 to any port 50051 proto tcp
+
+# Only allow Bitcoin RPC from localhost
+sudo ufw allow from 127.0.0.1 to any port 8332 proto tcp
+
+# Only allow PostgreSQL from application servers
+sudo ufw allow from 10.0.0.0/24 to any port 5432 proto tcp
+```
+
+**Network segmentation:**
+```
+Public Internet
+  |
+  ▼
+[Load Balancer] (TLS termination)
+  |
+  ▼
+[DMZ Network]
+  ├─ gRPC Endpoints (verifier, aggregator)
+  └─ Monitoring/Metrics
+      |
+      ▼
+[Internal Network]
+  ├─ Database Servers
+  ├─ Bitcoin Full Nodes
+  └─ Circuit Proving Infrastructure
+      |
+      ▼
+[Isolated Network]
+  └─ Key Management (HSMs)
+```
+
+### Monitoring and alerting
+
+**Critical metrics:**
+
+```rust
+// From core/src/metrics.rs
+metrics! {
+    // Challenge detection
+    watchtower_challenges_total: Counter,
+    operator_challenge_ack_total: Counter,
+    operator_slashing_events: Counter,
+    
+    // Proof verification
+    proof_verification_failures: Counter,
+    invalid_proof_attempts: Counter,
+    
+    // System health
+    bitcoin_connection_errors: Counter,
+    database_connection_errors: Counter,
+    grpc_auth_failures: Counter,
+}
+```
+
+**Alert triggers:**
+
+1. **Watchtower challenge received** - Immediate investigation
+2. **Operator slashing event** - Critical incident response
+3. **Proof verification failure** - Circuit bug or attack
+4. **Database connection loss** - Service degradation
+5. **Bitcoin node out of sync** - Chain following failure
+6. **Certificate expiration approaching** - Renewal needed
+
+**Logging:**
+
+```rust
+// Structured logging for security events
+tracing::warn!(
+    challenge_type = "watchtower",
+    operator_id = %operator_id,
+    block_hash = %block_hash,
+    "Watchtower challenge received"
+);
+```
+
+### Incident response
+
+**Compromise indicators:**
+
+- Unexpected watchtower challenges
+- Failed proof verifications
+- Unusual gRPC authentication failures
+- Abnormal database access patterns
+- Unexpected transaction broadcasts
+- Operator slashing events
+
+**Response procedures:**
+
+1. **Detect:** Automated monitoring triggers alert
+2. **Isolate:** Disconnect compromised services from network
+3. **Investigate:** Analyze logs, database state, and blockchain data
+4. **Remediate:** Patch vulnerabilities, rotate keys, update configuration
+5. **Recover:** Restore service with validated state
+6. **Post-mortem:** Document incident and improve defenses
+
+**Emergency contacts:**
+
+```
+Security Team: security@citrea.xyz
+PGP Key: (See SECURITY.md)
+Incident Hotline: [To be configured]
+```
+
+## Security best practices
+
+### Deployment checklist
+
+<Steps>
+  <Step title="Key management">
+    - [ ] Private keys stored in HSMs or secure key management
+    - [ ] Key backup procedures documented and tested
+    - [ ] Key rotation schedule established
+    - [ ] Emergency key recovery process defined
+  </Step>
+  <Step title="Certificate management">
+    - [ ] Production certificates from trusted CA
+    - [ ] Certificate rotation automated (90-day cycle)
+    - [ ] Certificate revocation list (CRL) configured
+    - [ ] Certificate permissions restricted (600 for keys)
+  </Step>
+  <Step title="Network security">
+    - [ ] Firewall rules configured for minimal exposure
+    - [ ] Network segmentation implemented
+    - [ ] DDoS protection enabled
+    - [ ] VPN or private network for inter-service communication
+  </Step>
+  <Step title="Database security">
+    - [ ] Database user permissions minimized
+    - [ ] SSL/TLS required for connections
+    - [ ] Encryption at rest enabled
+    - [ ] Regular encrypted backups automated
+  </Step>
+  <Step title="Application security">
+    - [ ] Latest stable version deployed
+    - [ ] Dependencies audited (`cargo audit`)
+    - [ ] Security patches applied promptly
+    - [ ] Rate limiting configured
+  </Step>
+  <Step title="Monitoring">
+    - [ ] Metrics exported to monitoring system
+    - [ ] Alerts configured for critical events
+    - [ ] Log aggregation and analysis
+    - [ ] On-call rotation established
+  </Step>
+  <Step title="Operational procedures">
+    - [ ] Incident response plan documented
+    - [ ] Disaster recovery tested
+    - [ ] Upgrade procedures documented
+    - [ ] Team training completed
+  </Step>
+</Steps>
+
+### Running in production
+
+**Environment isolation:**
+
+```bash
+# Separate production and testnet configurations
+export BITCOIN_NETWORK=mainnet
+export RISC0_DEV_MODE=0  # NEVER set to 1 in production
+export RUST_MIN_STACK=33554432
+
+# Use production BitVM cache
+export BITVM_CACHE_PATH=/secure/path/bitvm_cache_v3.bin
+```
+
+**Resource limits:**
+
+```toml
+# config.toml
+[resources]
+max_concurrent_proofs = 4
+proof_timeout_seconds = 300
+max_grpc_message_size = 10485760  # 10 MB
+
+[database]
+max_connections = 100
+connection_timeout_seconds = 30
+```
+
+**Secure configuration:**
+
+```toml
+# Use environment variables for secrets
+READ_CONFIG_FROM_ENV=1
+
+# Environment variables
+DATABASE_URL="postgresql://user:${DB_PASSWORD}@localhost/clementine"
+BITCOIN_RPC_PASSWORD="${BITCOIN_RPC_PASSWORD}"
+```
+
+<Warning>
+  Never hardcode passwords or private keys in configuration files. Use environment variables or secure secret management systems.
+</Warning>
+
+### Testing security
+
+**Security testing:**
+
+```bash
+# Run all tests with security features
+cargo test --all-features
+
+# Audit dependencies
+cargo audit
+
+# Check for common vulnerabilities
+cargo clippy -- -D warnings
+
+# Fuzz critical circuits
+cargo +nightly fuzz run bridge_circuit
+```
+
+**Chaos engineering:**
+
+```rust
+#[test]
+fn test_watchtower_catches_malicious_operator() {
+    // Operator submits invalid proof
+    let invalid_proof = create_invalid_bridge_proof();
+    
+    // Watchtower should detect and challenge
+    assert!(watchtower.detects_invalid_proof(&invalid_proof));
+    
+    // Challenge should succeed
+    let challenge = watchtower.create_challenge(&invalid_proof);
+    assert!(challenge.succeeds());
+    
+    // Operator should be slashed
+    assert!(operator_is_slashed());
+}
+```
+
+## Vulnerability disclosure
+
+If you discover a security vulnerability in Clementine:
+
+<Warning>
+  DO NOT open a public GitHub issue for security vulnerabilities.
+</Warning>
+
+**Responsible disclosure:**
+
+1. **Email:** security@citrea.xyz
+2. **Encryption:** Use the provided GPG key (see SECURITY.md)
+3. **Include:** Detailed description, reproduction steps, impact assessment
+4. **Response:** Expect acknowledgment within 48 hours
+
+**GPG Key Fingerprint:**
+```
+26B8 D67D 5638 1FA9 AFFE  7B06 C67B DCD3 2FF4 8C6E
+```
+
+**Bug bounty:**
+
+Clementine may offer rewards for responsibly disclosed vulnerabilities. Contact the security team for details.
+
+## Security resources
+
+<CardGroup cols={2}>
+  <Card title="SECURITY.md" icon="file-shield" href="https://github.com/chainwayxyz/clementine/blob/main/SECURITY.md">
+    Security policy and contact information
+  </Card>
+  <Card title="Audit reports" icon="clipboard-check" href="/resources/audits">
+    Third-party security audit reports
+  </Card>
+  <Card title="BitVM security" icon="lock" href="https://bitvm.org/bitvm_bridge.pdf">
+    BitVM bridge security model
+  </Card>
+  <Card title="RISC Zero security" icon="shield" href="https://dev.risczero.com/api/security-model">
+    RISC Zero zkVM security properties
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/getting-started/quickstart">
+    Deploy Clementine with security best practices
+  </Card>
+  <Card title="Configuration" icon="gear" href="/getting-started/configuration">
+    Configure secure deployments
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/operations/monitoring">
+    Set up security monitoring and alerts
+  </Card>
+  <Card title="Operations" icon="wrench" href="/operations/deposit-flow">
+    Operational security procedures
+  </Card>
+</CardGroup>

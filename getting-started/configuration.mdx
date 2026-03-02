@@ -1,0 +1,305 @@
+---
+title: Configuration
+description: Configure Clementine using TOML files or environment variables
+---
+
+Clementine supports two primary configuration methods: configuration files (TOML) and environment variables. You can mix these approaches based on your deployment needs.
+
+## Configuration Methods
+
+Clementine uses the following logic to determine the configuration source:
+
+### Main Configuration
+
+- If `READ_CONFIG_FROM_ENV=1` or `READ_CONFIG_FROM_ENV=on`, configuration is read from environment variables
+- If `READ_CONFIG_FROM_ENV=0` or `READ_CONFIG_FROM_ENV=off` or not set, configuration is read from the specified config file
+
+### Protocol Parameters
+
+- If `READ_PARAMSET_FROM_ENV=1` or `READ_PARAMSET_FROM_ENV=on`, protocol parameters are read from environment variables
+- If `READ_PARAMSET_FROM_ENV=0` or `READ_PARAMSET_FROM_ENV=off` or not set, protocol parameters are read from the specified protocol parameters file
+
+<Note>
+You can mix these approaches - for example, reading main configuration from a file but protocol parameters from environment variables.
+</Note>
+
+## Configuration File Method
+
+### Main Configuration File
+
+Clementine requires a main configuration file in TOML format. Use the reference configuration file located at `core/src/test/data/bridge_config.toml` as a template.
+
+<Steps>
+  <Step title="Copy the example configuration">
+    ```bash
+    cp core/src/test/data/bridge_config.toml config.toml
+    ```
+  </Step>
+
+  <Step title="Edit configuration parameters">
+    Open `config.toml` and modify the parameters for your deployment:
+
+    ```toml config.toml
+    # Actor configuration
+    protocol_paramset = "regtest"  # "bitcoin", "testnet4", or "regtest"
+    host = "127.0.0.1"
+    port = 17000
+    index = 0
+    secret_key = "your-secret-key-here"
+
+    # Verifiers and operators
+    verifiers_public_keys = [
+        "034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+        "02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27",
+    ]
+    num_verifiers = 2
+
+    operators_xonly_pks = [
+        "4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
+    ]
+    num_operators = 1
+    operator_withdrawal_fee_sats = 100000
+
+    # Bitcoin node configuration
+    bitcoin_rpc_url = "http://127.0.0.1:18443"
+    bitcoin_rpc_user = "admin"
+    bitcoin_rpc_password = "admin"
+
+    # Fee rate API
+    mempool_api_host = "https://mempool.space/"
+    mempool_api_endpoint = "api/v1/fees/recommended"
+
+    # PostgreSQL database
+    db_host = "127.0.0.1"
+    db_port = 5432
+    db_user = "clementine"
+    db_password = "clementine"
+    db_name = "clementine"
+
+    # Citrea configuration
+    citrea_rpc_url = "http://127.0.0.1:12345"
+    citrea_light_client_prover_url = "http://127.0.0.1:12346"
+    citrea_chain_id = 5655
+    bridge_contract_address = "3100000000000000000000000000000000000002"
+
+    # Header chain proof configuration
+    header_chain_proof_batch_size = 100
+
+    # Service endpoints
+    verifier_endpoints = [
+        "http://127.0.0.1:17001",
+        "http://127.0.0.1:17002",
+    ]
+    operator_endpoints = ["http://127.0.0.1:17005"]
+
+    # Security council
+    security_council = "1:50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+
+    # TLS certificate paths
+    server_cert_path = "certs/server/server.pem"
+    server_key_path = "certs/server/server.key"
+    ca_cert_path = "certs/ca/ca.pem"
+    client_cert_path = "certs/client/client.pem"
+    client_key_path = "certs/client/client.key"
+    aggregator_cert_path = "certs/aggregator/aggregator.pem"
+    client_verification = true
+
+    # Transaction sender configuration
+    tx_sender_fee_rate_hard_cap = 100
+    tx_sender_mempool_fee_rate_multiplier = 1
+    tx_sender_mempool_fee_rate_offset_sat_kvb = 0
+
+    # Watchtower configuration
+    time_to_send_watchtower_challenge = 216
+
+    # Telemetry
+    [telemetry]
+    host = "0.0.0.0"
+    port = 8081
+
+    # gRPC settings
+    [grpc]
+    max_message_size = 4194304
+    timeout_secs = 43200
+    tcp_keepalive_secs = 60
+    req_concurrency_limit = 300
+    ratelimit_req_count = 1000
+    ratelimit_req_interval_secs = 60
+    ```
+  </Step>
+</Steps>
+
+### Protocol Parameters File
+
+Create a protocol parameters file based on `core/src/test/data/protocol_paramset.toml`:
+
+```toml protocol_params.toml
+network = "regtest"  # "bitcoin", "testnet4", or "regtest"
+num_round_txs = 2
+num_kickoffs_per_round = 10
+num_signed_kickoffs = 2
+bridge_amount = 1000000000  # in satoshis
+kickoff_amount = 0  # in satoshis
+operator_challenge_amount = 200000000  # in satoshis
+collateral_funding_amount = 99000000
+kickoff_blockhash_commit_length = 40
+watchtower_challenge_bytes = 144
+winternitz_log_d = 4
+user_takes_after = 200
+operator_challenge_timeout_timelock = 144
+operator_challenge_nack_timelock = 432
+disprove_timeout_timelock = 720
+assert_timeout_timelock = 576
+operator_reimburse_timelock = 12
+watchtower_challenge_timeout_timelock = 288
+latest_blockhash_timeout_timelock = 360
+finality_depth = 1
+start_height = 190
+genesis_height = 0
+bridge_nonstandard = false
+```
+
+### Running with Configuration Files
+
+<CodeGroup>
+```bash Verifier
+./target/release/clementine-core verifier \
+  --config /path/to/config.toml \
+  --protocol-params /path/to/protocol_params.toml
+```
+
+```bash Operator
+./target/release/clementine-core operator \
+  --config /path/to/config.toml \
+  --protocol-params /path/to/protocol_params.toml
+```
+
+```bash Aggregator
+./target/release/clementine-core aggregator \
+  --config /path/to/config.toml \
+  --protocol-params /path/to/protocol_params.toml
+```
+</CodeGroup>
+
+## Environment Variable Method
+
+Alternatively, configure Clementine entirely through environment variables. Use `.env.example` as a reference.
+
+<Steps>
+  <Step title="Copy the example environment file">
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+
+  <Step title="Edit environment variables">
+    Open `.env` and configure the variables:
+
+    ```bash .env
+    READ_CONFIG_FROM_ENV=1
+    READ_PARAMSET_FROM_ENV=1
+
+    # Actor configuration
+    HOST=127.0.0.1
+    PORT=17000
+    INDEX=0
+    SECRET_KEY=your-secret-key-here
+
+    # Verifiers and operators
+    VERIFIERS_PUBLIC_KEYS=034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa,02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27
+    NUM_VERIFIERS=2
+    OPERATOR_XONLY_PKS=4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa
+    NUM_OPERATORS=1
+    OPERATOR_WITHDRAWAL_FEE_SATS=100000
+
+    # Bitcoin node
+    BITCOIN_RPC_URL=http://127.0.0.1:18443
+    BITCOIN_RPC_USER=admin
+    BITCOIN_RPC_PASSWORD=admin
+
+    # PostgreSQL
+    DB_HOST=127.0.0.1
+    DB_PORT=5432
+    DB_USER=clementine
+    DB_PASSWORD=clementine
+    DB_NAME=clementine
+
+    # Citrea
+    CITREA_RPC_URL=http://127.0.0.1:12345
+    CITREA_LIGHT_CLIENT_PROVER_URL=http://127.0.0.1:12346
+    CITREA_CHAIN_ID=5655
+    BRIDGE_CONTRACT_ADDRESS=3100000000000000000000000000000000000002
+
+    # Service endpoints
+    VERIFIER_ENDPOINTS=http://127.0.0.1:17001,http://127.0.0.1:17002
+    OPERATOR_ENDPOINTS=http://127.0.0.1:17005
+
+    # TLS certificates
+    SERVER_CERT_PATH="certs/server/server.pem"
+    SERVER_KEY_PATH="certs/server/server.key"
+    CA_CERT_PATH="certs/ca/ca.pem"
+    CLIENT_CERT_PATH="certs/client/client.pem"
+    CLIENT_KEY_PATH="certs/client/client.key"
+    AGGREGATOR_CERT_PATH="certs/aggregator/aggregator.pem"
+    CLIENT_VERIFICATION=true
+
+    # Protocol parameters
+    NETWORK=regtest
+    NUM_ROUND_TXS=2
+    NUM_KICKOFFS_PER_ROUND=10
+    BRIDGE_AMOUNT=1000000000
+    FINALITY_DEPTH=1
+    START_HEIGHT=190
+    ```
+  </Step>
+
+  <Step title="Run with environment variables">
+    ```bash
+    READ_CONFIG_FROM_ENV=1 READ_PARAMSET_FROM_ENV=1 \
+      ./target/release/clementine-core verifier
+    ```
+  </Step>
+</Steps>
+
+## Mixed Configuration Approach
+
+You can combine configuration files and environment variables:
+
+```bash
+# Read main config from file, protocol params from environment
+READ_CONFIG_FROM_ENV=0 READ_PARAMSET_FROM_ENV=1 \
+  ./target/release/clementine-core verifier --config /path/to/config.toml
+```
+
+## Key Configuration Parameters
+
+### Network Selection
+
+- `bitcoin` - Bitcoin mainnet
+- `testnet4` - Bitcoin testnet4
+- `regtest` - Local regression test network
+
+### Security Considerations
+
+<Warning>
+**Important security guidelines:**
+
+- Keep private keys and secret keys secure
+- Never commit sensitive credentials to version control
+- Use production-grade certificates for production deployments
+- Rotate certificates regularly
+- Use distinct client certificates for different clients/services
+- Set appropriate database connection limits based on your deployment
+</Warning>
+
+### TLS Certificate Configuration
+
+Clementine uses mutual TLS (mTLS) for secure gRPC communications:
+
+- **Verifier/Operator**: Methods can only be called by the aggregator using the aggregator's client certificate
+- **Internal methods**: Can only be called using the entity's own client certificate
+- **Aggregator**: Does not enforce client certificates but uses TLS for encryption
+
+## Next Steps
+
+With your configuration in place, proceed to [Quick Start](/getting-started/quickstart) to run your first Clementine service.

@@ -1,0 +1,516 @@
+---
+title: Docker Deployment
+description: Deploy Clementine services using Docker and Docker Compose
+---
+
+## Docker Image
+
+Clementine provides pre-built Docker images available on [Docker Hub](https://hub.docker.com/r/chainwayxyz/clementine).
+
+### Pull Pre-built Image
+
+Pull the latest image from Docker Hub:
+
+```bash
+docker pull chainwayxyz/clementine:latest
+```
+
+### Build Image Locally
+
+You can also build the Docker image locally using the provided Dockerfiles.
+
+<Tabs>
+  <Tab title="Standard Build">
+    Build without automation features:
+
+    ```bash
+    docker build -f scripts/docker/Dockerfile -t clementine:latest .
+    ```
+
+    **Dockerfile contents:**
+    ```dockerfile
+    # Compile Clementine
+    FROM rust:1.88.0 as builder
+    WORKDIR /clementine
+    COPY . .
+    RUN cargo build --release --bin clementine-core
+
+    FROM debian:bookworm-slim
+    RUN \
+      apt-get update \
+      && apt -y install gettext-base libssl-dev wget \
+      && apt clean \
+      && apt install -y --no-install-recommends ca-certificates \
+      && update-ca-certificates \
+      && rm -rf /var/lib/apt/lists/*
+
+    COPY --from=builder /clementine/target/release/clementine-core /clementine-core
+
+    # Set up Clementine
+    ENTRYPOINT [ "/clementine-core" ]
+    EXPOSE 17000
+    ```
+  </Tab>
+  <Tab title="Automation Build">
+    Build with automation features enabled:
+
+    ```bash
+    docker build -f scripts/docker/Dockerfile.automation -t clementine:automation .
+    ```
+
+    **Dockerfile contents:**
+    ```dockerfile
+    # Compile Clementine
+    FROM rust:1.88.0 as builder
+    WORKDIR /clementine
+    COPY . .
+    RUN cargo build --release --bin clementine-core --features=automation
+
+    FROM debian:bookworm-slim
+    RUN \
+      apt-get update \
+      && apt -y install gettext-base libssl-dev wget \
+      && apt clean \
+      && apt install -y --no-install-recommends ca-certificates \
+      && update-ca-certificates \
+      && rm -rf /var/lib/apt/lists/*
+
+    COPY --from=builder /clementine/target/release/clementine-core /clementine-core
+
+    # Set up Clementine
+    ENTRYPOINT [ "/clementine-core" ]
+    EXPOSE 17000
+    ```
+  </Tab>
+</Tabs>
+
+## Running with Docker
+
+### Basic Docker Run
+
+Run a single service using Docker:
+
+<Tabs>
+  <Tab title="With Config Files">
+    ```bash
+    docker run -d \
+      --name clementine-verifier \
+      -p 17000:17000 \
+      -v /path/to/config.toml:/config.toml \
+      -v /path/to/params.toml:/params.toml \
+      -v /path/to/certs:/certs \
+      -v /path/to/bitvm_cache.bin:/bitvm_cache.bin \
+      -e BITVM_CACHE_PATH=/bitvm_cache.bin \
+      -e RISC0_DEV_MODE=1 \
+      chainwayxyz/clementine:latest \
+      verifier --config /config.toml --protocol-params /params.toml
+    ```
+  </Tab>
+  <Tab title="With Environment Variables">
+    ```bash
+    docker run -d \
+      --name clementine-verifier \
+      -p 17000:17000 \
+      -v /path/to/certs:/certs \
+      -v /path/to/bitvm_cache.bin:/bitvm_cache.bin \
+      --env-file .env \
+      chainwayxyz/clementine:latest \
+      verifier
+    ```
+  </Tab>
+</Tabs>
+
+## Docker Compose Deployments
+
+Clementine provides multiple Docker Compose files located at `scripts/docker/` for different deployment scenarios. Configuration files can be found at `scripts/docker/configs/`.
+
+<Warning>
+  These compose files are configured for typical deployments and need modification before production use. Apart from regtest, new wallets won't have any funds and users are responsible for configuring their own addresses.
+</Warning>
+
+### Testnet4 Verifier Deployment
+
+<Steps>
+  <Step title="Navigate to docker directory">
+    ```bash
+    cd scripts/docker
+    ```
+  </Step>
+
+  <Step title="Review and modify configuration">
+    Edit configuration files in `configs/testnet4/`:
+    - `bridge_config.toml` - Main bridge configuration
+    - `protocol_paramset.toml` - Protocol parameters
+  </Step>
+
+  <Step title="Start the services">
+    ```bash
+    docker compose -f docker-compose.verifier.testnet4.yml up
+    ```
+  </Step>
+</Steps>
+
+**Services included:**
+- PostgreSQL database
+- Bitcoin testnet4 node
+- Citrea full node
+- Clementine verifier
+
+### Full Regtest Deployment
+
+For local testing and development, use the full regtest deployment:
+
+<Steps>
+  <Step title="Navigate to docker directory">
+    ```bash
+    cd scripts/docker
+    ```
+  </Step>
+
+  <Step title="Review regtest configuration">
+    Configuration file: `configs/regtest/.env.regtest`
+  </Step>
+
+  <Step title="Start all services">
+    ```bash
+    docker compose -f docker-compose.full.regtest.yml up
+    ```
+  </Step>
+</Steps>
+
+**Services included:**
+- PostgreSQL database (with multiple databases for different entities)
+- Bitcoin regtest node
+- Citrea sequencer
+- Citrea batch prover
+- Citrea light client prover
+- 4 Clementine verifiers (regtest_0 through regtest_3)
+- 2 Clementine operators (regtest_0 and regtest_1)
+- 1 Clementine aggregator
+
+## Docker Compose Service Configuration
+
+### PostgreSQL Configuration
+
+```yaml
+postgres_db:
+  image: 'postgres:latest'
+  container_name: postgres_db
+  environment:
+    POSTGRES_USER: clementine
+    POSTGRES_PASSWORD: clementine
+    POSTGRES_DB: clementine
+    POSTGRES_HOST_AUTH_METHOD: trust
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U clementine -d clementine"]
+    interval: 2s
+    timeout: 5s
+    retries: 10
+  ports:
+    - "5432:5432"
+```
+
+### Bitcoin Node Configuration
+
+<Tabs>
+  <Tab title="Testnet4">
+    ```yaml
+    bitcoin_testnet4:
+      image: bitcoin/bitcoin:29
+      container_name: bitcoin_testnet4
+      ports:
+        - "20443:20443"
+        - "20444:20444"
+      command:
+        -printtoconsole
+        -testnet4=1
+        -rest
+        -rpcbind=0.0.0.0
+        -rpcallowip=0.0.0.0/0
+        -rpcport=20443
+        -rpcuser=admin
+        -rpcpassword=admin
+        -server
+        -txindex=1
+        -fallbackfee=0.00001
+    ```
+  </Tab>
+  <Tab title="Regtest">
+    ```yaml
+    bitcoin_regtest:
+      image: bitcoin/bitcoin:29
+      container_name: bitcoin_regtest
+      ports:
+        - "20443:20443"
+        - "20444:20444"
+      command:
+        -printtoconsole
+        -regtest=1
+        -rest
+        -rpcbind=0.0.0.0
+        -rpcallowip=0.0.0.0/0
+        -rpcport=20443
+        -rpcuser=admin
+        -rpcpassword=admin
+        -server
+        -txindex=1
+        -fallbackfee=0.00001
+        -maxtxfee=5
+    ```
+  </Tab>
+</Tabs>
+
+### Clementine Service Configuration
+
+#### Verifier Service
+
+```yaml
+clementine_verifier:
+  depends_on:
+    postgres_db:
+      condition: service_healthy
+    bitcoin_testnet4:
+      condition: service_healthy
+    citrea_full_node:
+      condition: service_started
+  image: chainwayxyz/clementine
+  platform: linux/amd64
+  container_name: clementine_verifier
+  environment:
+    - BITVM_CACHE_PATH=/bitvm_cache.bin
+    - RISC0_DEV_MODE=1
+  command:
+    verifier --config /bridge_config.toml --protocol-params /protocol_paramset.toml
+  ports:
+    - "17001:17000"
+  volumes:
+    - ./configs/testnet4/bridge_config.toml:/bridge_config.toml
+    - ./configs/testnet4/protocol_paramset.toml:/protocol_paramset.toml
+    - ../../bitvm_cache.bin:/bitvm_cache.bin
+    - ../../core/certs:/certs
+```
+
+#### Operator Service
+
+```yaml
+clementine_operator_regtest_0:
+  image: chainwayxyz/clementine
+  platform: linux/amd64
+  env_file:
+    - ./configs/regtest/.env.regtest
+  environment:
+    - SECRET_KEY=1111111111111111111111111111111111111111111111111111111111111111
+    - DB_NAME=clementine0
+  command:
+    operator
+  ports:
+    - "17005:17000"
+  volumes:
+    - ../../bitvm_cache.bin:/bitvm_cache.bin
+    - ../../bitvm_cache_dev.bin:/bitvm_cache_dev.bin
+    - ../../core/certs:/certs
+```
+
+#### Aggregator Service
+
+```yaml
+clementine_aggregator_regtest:
+  image: chainwayxyz/clementine
+  platform: linux/amd64
+  env_file:
+    - ./configs/regtest/.env.regtest
+  environment:
+    - SECRET_KEY=1111111111111111111111111111111111111111111111111111111111111111
+    - DB_NAME=clementine0
+    - CLIENT_CERT_PATH=/certs/aggregator/aggregator.pem
+    - CLIENT_KEY_PATH=/certs/aggregator/aggregator.key
+  command:
+    aggregator
+  ports:
+    - "17000:17000"
+```
+
+## Port Mapping
+
+Default port mappings for services:
+
+| Service | Container Port | Host Port |
+|---------|----------------|------------|
+| PostgreSQL | 5432 | 5432 |
+| Bitcoin RPC | 20443 | 20443 |
+| Bitcoin P2P | 20444 | 20444 |
+| Citrea Sequencer | 12345 | 12345 |
+| Citrea Light Client Prover | 12349 | 12346 |
+| Aggregator | 17000 | 17000 |
+| Verifier 0 | 17000 | 17001 |
+| Verifier 1 | 17000 | 17002 |
+| Verifier 2 | 17000 | 17003 |
+| Verifier 3 | 17000 | 17004 |
+| Operator 0 | 17000 | 17005 |
+| Operator 1 | 17000 | 17006 |
+
+## Managing Docker Deployments
+
+### Start Services
+
+```bash
+# Start in foreground
+docker compose -f docker-compose.full.regtest.yml up
+
+# Start in background
+docker compose -f docker-compose.full.regtest.yml up -d
+```
+
+### Stop Services
+
+```bash
+# Stop services
+docker compose -f docker-compose.full.regtest.yml down
+
+# Stop and remove volumes
+docker compose -f docker-compose.full.regtest.yml down -v
+```
+
+### View Logs
+
+```bash
+# All services
+docker compose -f docker-compose.full.regtest.yml logs -f
+
+# Specific service
+docker compose -f docker-compose.full.regtest.yml logs -f clementine_verifier
+```
+
+### Check Service Status
+
+```bash
+docker compose -f docker-compose.full.regtest.yml ps
+```
+
+## Health Checks
+
+### Verifier Health Check
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/17000'"]
+  interval: 1s
+  timeout: 5s
+  retries: 100
+```
+
+### PostgreSQL Health Check
+
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "pg_isready -U clementine -d clementine"]
+  interval: 2s
+  timeout: 5s
+  retries: 10
+```
+
+### Bitcoin Health Check
+
+```yaml
+healthcheck:
+  test: [
+    "CMD-SHELL",
+    "bitcoin-cli -regtest -rpcuser=admin -rpcpassword=admin -rpcport=20443 loadwallet admin || bitcoin-cli -regtest -rpcuser=admin -rpcpassword=admin -rpcport=20443 createwallet admin; \
+    if  bitcoin-cli -regtest -rpcuser=admin -rpcpassword=admin -rpcport=20443 getblockchaininfo | grep '\"initialblockdownload\": true'; then \
+      false; \
+    else \
+      true; \
+    fi
+    "
+  ]
+  interval: 2s
+  timeout: 15s
+  retries: 10
+```
+
+## Volume Management
+
+Persistent data is stored in named volumes:
+
+```yaml
+volumes:
+  postgres_db:
+  bitcoin_regtest:
+  citrea_sequencer_regtest:
+  citrea_batch_prover_regtest:
+  citrea_light_client_prover_regtest:
+```
+
+### Inspect Volumes
+
+```bash
+docker volume ls
+docker volume inspect <volume_name>
+```
+
+### Backup Volumes
+
+```bash
+docker run --rm -v <volume_name>:/data -v $(pwd):/backup \
+  ubuntu tar czf /backup/backup.tar.gz /data
+```
+
+## Customizing Docker Deployments
+
+### Using Custom Images
+
+Set the image via environment variable:
+
+```bash
+CLEMENTINE_IMAGE=myregistry/clementine:custom \
+  docker compose -f docker-compose.full.regtest.yml up
+```
+
+### Override Configuration
+
+Create a `docker-compose.override.yml` file:
+
+```yaml
+services:
+  clementine_verifier:
+    environment:
+      - CUSTOM_VAR=value
+    volumes:
+      - ./my-config.toml:/config.toml
+```
+
+## Troubleshooting
+
+### Container Won't Start
+
+Check container logs:
+
+```bash
+docker logs clementine_verifier
+```
+
+### Database Connection Issues
+
+Verify PostgreSQL is healthy:
+
+```bash
+docker exec postgres_db pg_isready -U clementine -d clementine
+```
+
+### Bitcoin Node Sync
+
+Check Bitcoin sync status:
+
+```bash
+docker exec bitcoin_testnet4 \
+  bitcoin-cli -testnet4 -rpcuser=admin -rpcpassword=admin -rpcport=20443 \
+  getblockchaininfo
+```
+
+### Network Connectivity
+
+Inspect the Docker network:
+
+```bash
+docker network inspect clementine-network
+```

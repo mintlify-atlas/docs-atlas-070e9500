@@ -1,0 +1,796 @@
+---
+title: Environment Variables Reference
+description: Complete reference for all Clementine environment variables
+---
+
+## Configuration Source Selection
+
+Clementine uses the following environment variables to determine the configuration source:
+
+### READ_CONFIG_FROM_ENV
+
+Controls whether main configuration is read from environment variables or config files.
+
+- **Type:** Boolean (0/1, on/off)
+- **Default:** `0` (read from config file)
+- **Example:** `READ_CONFIG_FROM_ENV=1`
+
+**Behavior:**
+- `1` or `on`: Configuration is read from environment variables
+- `0` or `off` or not set: Configuration is read from the specified config file
+
+### READ_PARAMSET_FROM_ENV
+
+Controls whether protocol parameters are read from environment variables or parameter files.
+
+- **Type:** Boolean (0/1, on/off)
+- **Default:** `0` (read from parameter file)
+- **Example:** `READ_PARAMSET_FROM_ENV=1`
+
+**Behavior:**
+- `1` or `on`: Protocol parameters are read from environment variables
+- `0` or `off` or not set: Protocol parameters are read from the specified protocol parameters file
+
+<Note>
+  You can mix these approaches - for example, reading main configuration from a file but protocol parameters from environment variables.
+</Note>
+
+## Server Configuration
+
+### HOST
+
+The host address to bind the service to.
+
+- **Type:** String (IP address)
+- **Default:** `127.0.0.1`
+- **Example:** `HOST=0.0.0.0`
+
+### PORT
+
+The port number for the service to listen on.
+
+- **Type:** Integer
+- **Default:** `17000`
+- **Example:** `PORT=17001`
+
+### INDEX
+
+The index identifier for this service instance.
+
+- **Type:** Integer
+- **Default:** `0`
+- **Example:** `INDEX=1`
+
+### SECRET_KEY
+
+The private key for this service instance.
+
+- **Type:** String (64-character hex)
+- **Required:** Yes
+- **Example:** `SECRET_KEY=1111111111111111111111111111111111111111111111111111111111111111`
+
+<Warning>
+  Keep this value secure and never commit it to version control. Use different keys for different environments.
+</Warning>
+
+### WINTERNITZ_SECRET_KEY
+
+The Winternitz signature scheme secret key.
+
+- **Type:** String (64-character hex)
+- **Required:** Yes
+- **Example:** `WINTERNITZ_SECRET_KEY=2222222222222222222222222222222222222222222222222222222222222222`
+
+## Verifier Configuration
+
+### VERIFIERS_PUBLIC_KEYS
+
+Comma-separated list of verifier public keys.
+
+- **Type:** String (comma-separated public keys)
+- **Required:** Yes
+- **Example:**
+  ```bash
+  VERIFIERS_PUBLIC_KEYS=034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa,02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27,023c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1,032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991
+  ```
+
+### NUM_VERIFIERS
+
+The total number of verifiers in the network.
+
+- **Type:** Integer
+- **Required:** Yes
+- **Example:** `NUM_VERIFIERS=4`
+
+### VERIFIER_ENDPOINTS
+
+Comma-separated list of verifier endpoint URLs.
+
+- **Type:** String (comma-separated URLs)
+- **Required:** Yes
+- **Example:** `VERIFIER_ENDPOINTS=http://127.0.0.1:17001,http://127.0.0.1:17002,http://127.0.0.1:17003,http://127.0.0.1:17004`
+
+## Operator Configuration
+
+### OPERATOR_XONLY_PKS
+
+Comma-separated list of operator x-only public keys.
+
+- **Type:** String (comma-separated public keys)
+- **Required:** Yes
+- **Example:** `OPERATOR_XONLY_PKS=4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa,466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27`
+
+### NUM_OPERATORS
+
+The total number of operators in the network.
+
+- **Type:** Integer
+- **Required:** Yes
+- **Example:** `NUM_OPERATORS=2`
+
+### OPERATOR_WITHDRAWAL_FEE_SATS
+
+Operator withdrawal fee in satoshis.
+
+- **Type:** Integer
+- **Required:** Yes
+- **Example:** `OPERATOR_WITHDRAWAL_FEE_SATS=100000`
+
+### OPERATOR_ENDPOINTS
+
+Comma-separated list of operator endpoint URLs.
+
+- **Type:** String (comma-separated URLs)
+- **Required:** Yes
+- **Example:** `OPERATOR_ENDPOINTS=http://127.0.0.1:17005,http://127.0.0.1:17006`
+
+### OPERATOR_REIMBURSEMENT_ADDRESS
+
+Bitcoin address for operator reimbursements.
+
+- **Type:** String (Bitcoin address)
+- **Required:** Yes
+- **Example:** `OPERATOR_REIMBURSEMENT_ADDRESS=32iVBEu4dxkUQk9dJbZUiBiQdmypcEyJRf`
+
+### OPERATOR_COLLATERAL_FUNDING_OUTPOINT
+
+The funding outpoint for operator collateral.
+
+- **Type:** String (txid:vout)
+- **Required:** Yes
+- **Example:** `OPERATOR_COLLATERAL_FUNDING_OUTPOINT=04bec3b3d996e4db2ac6175101bc9f281e7dba3029de9f4201d09c0d53b0ccf8:1`
+
+## Bitcoin Configuration
+
+### BITCOIN_RPC_URL
+
+The Bitcoin RPC endpoint URL including wallet name.
+
+- **Type:** String (URL)
+- **Required:** Yes
+- **Example:** `BITCOIN_RPC_URL=http://127.0.0.1:18443/wallet/admin`
+
+### BITCOIN_RPC_USER
+
+Bitcoin RPC username.
+
+- **Type:** String
+- **Required:** Yes
+- **Example:** `BITCOIN_RPC_USER=admin`
+
+### BITCOIN_RPC_PASSWORD
+
+Bitcoin RPC password.
+
+- **Type:** String
+- **Required:** Yes
+- **Example:** `BITCOIN_RPC_PASSWORD=admin`
+
+<Warning>
+  Store RPC credentials securely and use strong passwords in production.
+</Warning>
+
+## Mempool API Configuration
+
+### MEMPOOL_API_HOST
+
+The mempool API host URL.
+
+- **Type:** String (URL)
+- **Default:** `https://mempool.space/`
+- **Example:** `MEMPOOL_API_HOST=https://mempool.space/`
+
+### MEMPOOL_API_ENDPOINT
+
+The mempool API endpoint path for fee recommendations.
+
+- **Type:** String
+- **Default:** `api/v1/fees/recommended`
+- **Example:** `MEMPOOL_API_ENDPOINT=api/v1/fees/recommended`
+
+## Database Configuration
+
+### DB_HOST
+
+PostgreSQL database host.
+
+- **Type:** String (hostname or IP)
+- **Default:** `127.0.0.1`
+- **Example:** `DB_HOST=localhost`
+
+### DB_PORT
+
+PostgreSQL database port.
+
+- **Type:** Integer
+- **Default:** `5432`
+- **Example:** `DB_PORT=5432`
+
+### DB_USER
+
+PostgreSQL database username.
+
+- **Type:** String
+- **Default:** `clementine`
+- **Example:** `DB_USER=clementine`
+
+### DB_PASSWORD
+
+PostgreSQL database password.
+
+- **Type:** String
+- **Default:** `clementine`
+- **Example:** `DB_PASSWORD=secure_password`
+
+### DB_NAME
+
+PostgreSQL database name.
+
+- **Type:** String
+- **Default:** `clementine`
+- **Example:** `DB_NAME=clementine`
+
+<Note>
+  Multiple services from the same entity can share the same database.
+</Note>
+
+## Citrea Configuration
+
+### CITREA_RPC_URL
+
+Citrea RPC endpoint URL.
+
+- **Type:** String (URL)
+- **Required:** Yes
+- **Example:** `CITREA_RPC_URL=http://127.0.0.1:12345`
+
+### CITREA_LIGHT_CLIENT_PROVER_URL
+
+Citrea light client prover endpoint URL.
+
+- **Type:** String (URL)
+- **Required:** Yes
+- **Example:** `CITREA_LIGHT_CLIENT_PROVER_URL=http://127.0.0.1:12346`
+
+### CITREA_CHAIN_ID
+
+Citrea chain identifier.
+
+- **Type:** Integer
+- **Required:** Yes
+- **Example:** `CITREA_CHAIN_ID=5655`
+
+### BRIDGE_CONTRACT_ADDRESS
+
+The bridge contract address on Citrea.
+
+- **Type:** String (Ethereum address)
+- **Required:** Yes
+- **Example:** `BRIDGE_CONTRACT_ADDRESS=3100000000000000000000000000000000000002`
+
+## Transaction Sender Configuration
+
+### TX_SENDER_FEE_RATE_HARD_CAP
+
+Maximum allowed fee rate in sat/vByte.
+
+- **Type:** Integer
+- **Default:** `100`
+- **Example:** `TX_SENDER_FEE_RATE_HARD_CAP=100`
+
+### TX_SENDER_MEMPOOL_FEE_RATE_MULTIPLIER
+
+Multiplier for mempool fee rate.
+
+- **Type:** Float
+- **Default:** `1`
+- **Example:** `TX_SENDER_MEMPOOL_FEE_RATE_MULTIPLIER=1.5`
+
+### TX_SENDER_MEMPOOL_FEE_RATE_OFFSET_SAT_KVB
+
+Offset for mempool fee rate in sat/kvB.
+
+- **Type:** Integer
+- **Default:** `0`
+- **Example:** `TX_SENDER_MEMPOOL_FEE_RATE_OFFSET_SAT_KVB=1000`
+
+### TX_SENDER_CPFP_FEE_PAYER_BUMP_WAIT_TIME_SECONDS
+
+Wait time before CPFP fee bumping in seconds.
+
+- **Type:** Integer
+- **Default:** `3600`
+- **Example:** `TX_SENDER_CPFP_FEE_PAYER_BUMP_WAIT_TIME_SECONDS=7200`
+
+## TLS/Certificate Configuration
+
+### SERVER_CERT_PATH
+
+Path to the server TLS certificate.
+
+- **Type:** String (file path)
+- **Required:** Yes
+- **Example:** `SERVER_CERT_PATH="certs/server/server.pem"`
+
+### SERVER_KEY_PATH
+
+Path to the server TLS private key.
+
+- **Type:** String (file path)
+- **Required:** Yes
+- **Example:** `SERVER_KEY_PATH="certs/server/server.key"`
+
+### CA_CERT_PATH
+
+Path to the Certificate Authority certificate.
+
+- **Type:** String (file path)
+- **Required:** Yes
+- **Example:** `CA_CERT_PATH="certs/ca/ca.pem"`
+
+### CLIENT_CERT_PATH
+
+Path to the client TLS certificate.
+
+- **Type:** String (file path)
+- **Required:** Yes
+- **Example:** `CLIENT_CERT_PATH="certs/client/client.pem"`
+
+### CLIENT_KEY_PATH
+
+Path to the client TLS private key.
+
+- **Type:** String (file path)
+- **Required:** Yes
+- **Example:** `CLIENT_KEY_PATH="certs/client/client.key"`
+
+### AGGREGATOR_CERT_PATH
+
+Path to the aggregator TLS certificate.
+
+- **Type:** String (file path)
+- **Required:** Yes
+- **Example:** `AGGREGATOR_CERT_PATH="certs/aggregator/aggregator.pem"`
+
+### CLIENT_VERIFICATION
+
+Enable client certificate verification.
+
+- **Type:** Boolean
+- **Default:** `true`
+- **Example:** `CLIENT_VERIFICATION=true`
+
+<Warning>
+  Keep all private key files secure and ensure proper file permissions (e.g., 0600).
+</Warning>
+
+## Telemetry Configuration
+
+### TELEMETRY_HOST
+
+Host address for telemetry server.
+
+- **Type:** String (IP address)
+- **Default:** `0.0.0.0`
+- **Example:** `TELEMETRY_HOST=127.0.0.1`
+
+### TELEMETRY_PORT
+
+Port for telemetry server.
+
+- **Type:** Integer
+- **Default:** `8081`
+- **Example:** `TELEMETRY_PORT=8081`
+
+## Aggregator Configuration
+
+### AGGREGATOR_VERIFICATION_ADDRESS
+
+Ethereum address used for aggregator verification.
+
+- **Type:** String (Ethereum address)
+- **Required:** Yes
+- **Example:** `AGGREGATOR_VERIFICATION_ADDRESS=0x242fbec93465ce42b3d7c0e1901824a2697193fd`
+
+## Header Chain Configuration
+
+### HEADER_CHAIN_PROOF_PATH
+
+Path to the header chain proof file.
+
+- **Type:** String (file path)
+- **Required:** Yes
+- **Example:** `HEADER_CHAIN_PROOF_PATH=../core/src/test/data/first_1.bin`
+
+### HEADER_CHAIN_PROOF_BATCH_SIZE
+
+Batch size for header chain proof processing.
+
+- **Type:** Integer
+- **Default:** `100`
+- **Example:** `HEADER_CHAIN_PROOF_BATCH_SIZE=100`
+
+## Protocol Parameters
+
+### NETWORK
+
+Bitcoin network to use.
+
+- **Type:** String
+- **Options:** `mainnet`, `testnet`, `testnet4`, `signet`, `regtest`
+- **Example:** `NETWORK=regtest`
+
+### NUM_ROUND_TXS
+
+Number of transactions per round.
+
+- **Type:** Integer
+- **Default:** `3`
+- **Example:** `NUM_ROUND_TXS=3`
+
+### NUM_KICKOFFS_PER_ROUND
+
+Number of kickoffs per round.
+
+- **Type:** Integer
+- **Default:** `10`
+- **Example:** `NUM_KICKOFFS_PER_ROUND=10`
+
+### NUM_SIGNED_KICKOFFS
+
+Number of signed kickoffs required.
+
+- **Type:** Integer
+- **Default:** `2`
+- **Example:** `NUM_SIGNED_KICKOFFS=2`
+
+### BRIDGE_AMOUNT
+
+Bridge amount in satoshis.
+
+- **Type:** Integer
+- **Default:** `1000000000`
+- **Example:** `BRIDGE_AMOUNT=1000000000`
+
+### KICKOFF_AMOUNT
+
+Kickoff amount in satoshis.
+
+- **Type:** Integer
+- **Default:** `0`
+- **Example:** `KICKOFF_AMOUNT=0`
+
+### OPERATOR_CHALLENGE_AMOUNT
+
+Operator challenge amount in satoshis.
+
+- **Type:** Integer
+- **Default:** `200000000`
+- **Example:** `OPERATOR_CHALLENGE_AMOUNT=200000000`
+
+### COLLATERAL_FUNDING_AMOUNT
+
+Collateral funding amount in satoshis.
+
+- **Type:** Integer
+- **Default:** `99000000`
+- **Example:** `COLLATERAL_FUNDING_AMOUNT=99000000`
+
+## Timelock Configuration
+
+### KICKOFF_BLOCKHASH_COMMIT_LENGTH
+
+Block hash commitment length for kickoffs.
+
+- **Type:** Integer (blocks)
+- **Default:** `40`
+- **Example:** `KICKOFF_BLOCKHASH_COMMIT_LENGTH=40`
+
+### USER_TAKES_AFTER
+
+Blocks after which users can take action.
+
+- **Type:** Integer (blocks)
+- **Default:** `200`
+- **Example:** `USER_TAKES_AFTER=200`
+
+### OPERATOR_CHALLENGE_TIMEOUT_TIMELOCK
+
+Operator challenge timeout in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `144`
+- **Example:** `OPERATOR_CHALLENGE_TIMEOUT_TIMELOCK=144`
+
+### OPERATOR_CHALLENGE_NACK_TIMELOCK
+
+Operator challenge NACK timelock in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `432`
+- **Example:** `OPERATOR_CHALLENGE_NACK_TIMELOCK=432`
+
+### DISPROVE_TIMEOUT_TIMELOCK
+
+Disprove timeout in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `720`
+- **Example:** `DISPROVE_TIMEOUT_TIMELOCK=720`
+
+### ASSERT_TIMEOUT_TIMELOCK
+
+Assert timeout in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `576`
+- **Example:** `ASSERT_TIMEOUT_TIMELOCK=576`
+
+### OPERATOR_REIMBURSE_TIMELOCK
+
+Operator reimbursement timelock in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `12`
+- **Example:** `OPERATOR_REIMBURSE_TIMELOCK=12`
+
+### WATCHTOWER_CHALLENGE_TIMEOUT_TIMELOCK
+
+Watchtower challenge timeout in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `288`
+- **Example:** `WATCHTOWER_CHALLENGE_TIMEOUT_TIMELOCK=288`
+
+### TIME_TO_SEND_WATCHTOWER_CHALLENGE
+
+Time to send watchtower challenge in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `216`
+- **Example:** `TIME_TO_SEND_WATCHTOWER_CHALLENGE=216`
+
+### LATEST_BLOCKHASH_TIMEOUT_TIMELOCK
+
+Latest blockhash timeout in blocks.
+
+- **Type:** Integer (blocks)
+- **Default:** `360`
+- **Example:** `LATEST_BLOCKHASH_TIMEOUT_TIMELOCK=360`
+
+## Chain State Configuration
+
+### FINALITY_DEPTH
+
+Number of confirmations for finality.
+
+- **Type:** Integer (blocks)
+- **Default:** `1`
+- **Example:** `FINALITY_DEPTH=6`
+
+### START_HEIGHT
+
+Starting block height for the bridge.
+
+- **Type:** Integer
+- **Required:** Yes
+- **Example:** `START_HEIGHT=8148`
+
+### GENESIS_HEIGHT
+
+Genesis block height.
+
+- **Type:** Integer
+- **Required:** Yes
+- **Example:** `GENESIS_HEIGHT=8148`
+
+### GENESIS_CHAIN_STATE_HASH
+
+Genesis chain state hash.
+
+- **Type:** String (64-character hex)
+- **Required:** Yes
+- **Example:** `GENESIS_CHAIN_STATE_HASH=1111111111111111111111111111111111111111111111111111111111111111`
+
+## Advanced Configuration
+
+### WATCHTOWER_CHALLENGE_BYTES
+
+Watchtower challenge size in bytes.
+
+- **Type:** Integer
+- **Default:** `144`
+- **Example:** `WATCHTOWER_CHALLENGE_BYTES=144`
+
+### WINTERNITZ_LOG_D
+
+Winternitz signature parameter (log d).
+
+- **Type:** Integer
+- **Default:** `4`
+- **Example:** `WINTERNITZ_LOG_D=4`
+
+### BRIDGE_NONSTANDARD
+
+Allow non-standard bridge transactions.
+
+- **Type:** Boolean
+- **Default:** `false`
+- **Example:** `BRIDGE_NONSTANDARD=true`
+
+### SECURITY_COUNCIL
+
+Security council configuration.
+
+- **Type:** String
+- **Format:** `threshold:public_key`
+- **Example:** `SECURITY_COUNCIL=1:50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0`
+
+## Runtime Environment Variables
+
+### RISC0_DEV_MODE
+
+Enable RISC Zero development mode (disables proof verification).
+
+- **Type:** Boolean (0/1)
+- **Default:** `0`
+- **Example:** `RISC0_DEV_MODE=1`
+
+<Warning>
+  Only use RISC0_DEV_MODE=1 in development and testing environments. Never enable this in production.
+</Warning>
+
+### BITVM_CACHE_PATH
+
+Path to BitVM cache file.
+
+- **Type:** String (file path)
+- **Required:** No (will be generated if not present)
+- **Example:** `BITVM_CACHE_PATH=/path/to/bitvm_cache.bin`
+
+<Note>
+  Use `bitvm_cache_dev.bin` when RISC0_DEV_MODE=1, and `bitvm_cache.bin` otherwise.
+</Note>
+
+### RUST_MIN_STACK
+
+Minimum stack size for Rust runtime.
+
+- **Type:** Integer (bytes)
+- **Required:** Yes
+- **Minimum:** `33554432` (32 MB)
+- **Example:** `RUST_MIN_STACK=33554432`
+
+### RUST_LIB_BACKTRACE
+
+Enable backtraces for errors.
+
+- **Type:** String
+- **Options:** `0`, `1`, `full`
+- **Example:** `RUST_LIB_BACKTRACE=full`
+
+## Example .env File
+
+Here's a complete example `.env` file for a regtest deployment:
+
+```bash
+# Configuration source
+READ_CONFIG_FROM_ENV=1
+READ_PARAMSET_FROM_ENV=1
+
+# Server configuration
+HOST=127.0.0.1
+PORT=17000
+INDEX=0
+SECRET_KEY=1111111111111111111111111111111111111111111111111111111111111111
+WINTERNITZ_SECRET_KEY=2222222222222222222222222222222222222222222222222222222222222222
+
+# Verifier configuration
+VERIFIERS_PUBLIC_KEYS=034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa,02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27,023c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1,032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991
+NUM_VERIFIERS=4
+VERIFIER_ENDPOINTS=http://127.0.0.1:17001,http://127.0.0.1:17002,http://127.0.0.1:17003,http://127.0.0.1:17004
+
+# Operator configuration
+OPERATOR_XONLY_PKS=4f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa,466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27
+NUM_OPERATORS=2
+OPERATOR_WITHDRAWAL_FEE_SATS=100000
+OPERATOR_ENDPOINTS=http://127.0.0.1:17005,http://127.0.0.1:17006
+OPERATOR_REIMBURSEMENT_ADDRESS=32iVBEu4dxkUQk9dJbZUiBiQdmypcEyJRf
+OPERATOR_COLLATERAL_FUNDING_OUTPOINT=04bec3b3d996e4db2ac6175101bc9f281e7dba3029de9f4201d09c0d53b0ccf8:1
+
+# Bitcoin configuration
+BITCOIN_RPC_URL=http://127.0.0.1:18443/wallet/admin
+BITCOIN_RPC_USER=admin
+BITCOIN_RPC_PASSWORD=admin
+
+# Mempool API
+MEMPOOL_API_HOST=https://mempool.space/
+MEMPOOL_API_ENDPOINT=api/v1/fees/recommended
+
+# Database configuration
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_USER=clementine
+DB_PASSWORD=clementine
+DB_NAME=clementine
+
+# Citrea configuration
+CITREA_RPC_URL=http://127.0.0.1:1234
+CITREA_LIGHT_CLIENT_PROVER_URL=http://127.0.0.1:1235
+CITREA_CHAIN_ID=5655
+BRIDGE_CONTRACT_ADDRESS=3100000000000000000000000000000000000002
+
+# Transaction sender
+TX_SENDER_FEE_RATE_HARD_CAP=100
+TX_SENDER_MEMPOOL_FEE_RATE_MULTIPLIER=1
+TX_SENDER_MEMPOOL_FEE_RATE_OFFSET_SAT_KVB=0
+TX_SENDER_CPFP_FEE_PAYER_BUMP_WAIT_TIME_SECONDS=3600
+
+# TLS/Certificates
+SERVER_CERT_PATH="certs/server/server.pem"
+SERVER_KEY_PATH="certs/server/server.key"
+CA_CERT_PATH="certs/ca/ca.pem"
+CLIENT_CERT_PATH="certs/client/client.pem"
+CLIENT_KEY_PATH="certs/client/client.key"
+AGGREGATOR_CERT_PATH="certs/aggregator/aggregator.pem"
+CLIENT_VERIFICATION=true
+
+# Telemetry
+TELEMETRY_HOST=0.0.0.0
+TELEMETRY_PORT=8081
+
+# Aggregator
+AGGREGATOR_VERIFICATION_ADDRESS=0x242fbec93465ce42b3d7c0e1901824a2697193fd
+
+# Header chain
+HEADER_CHAIN_PROOF_PATH=../core/src/test/data/first_1.bin
+HEADER_CHAIN_PROOF_BATCH_SIZE=100
+
+# Protocol parameters
+NETWORK=regtest
+NUM_ROUND_TXS=3
+NUM_KICKOFFS_PER_ROUND=10
+NUM_SIGNED_KICKOFFS=2
+BRIDGE_AMOUNT=1000000000
+KICKOFF_AMOUNT=0
+OPERATOR_CHALLENGE_AMOUNT=200000000
+COLLATERAL_FUNDING_AMOUNT=99000000
+KICKOFF_BLOCKHASH_COMMIT_LENGTH=40
+WATCHTOWER_CHALLENGE_BYTES=144
+WINTERNITZ_LOG_D=4
+USER_TAKES_AFTER=200
+OPERATOR_CHALLENGE_TIMEOUT_TIMELOCK=144
+OPERATOR_CHALLENGE_NACK_TIMELOCK=432
+DISPROVE_TIMEOUT_TIMELOCK=720
+ASSERT_TIMEOUT_TIMELOCK=576
+OPERATOR_REIMBURSE_TIMELOCK=12
+WATCHTOWER_CHALLENGE_TIMEOUT_TIMELOCK=288
+TIME_TO_SEND_WATCHTOWER_CHALLENGE=216
+LATEST_BLOCKHASH_TIMEOUT_TIMELOCK=360
+FINALITY_DEPTH=1
+START_HEIGHT=8148
+GENESIS_HEIGHT=8148
+GENESIS_CHAIN_STATE_HASH=1111111111111111111111111111111111111111111111111111111111111111
+BRIDGE_NONSTANDARD=true
+SECURITY_COUNCIL=1:50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0
+```

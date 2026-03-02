@@ -1,0 +1,486 @@
+---
+title: Design principles
+description: Learn about Clementine's technical design, architectural decisions, and the cryptographic mechanisms that enable trust-minimized Bitcoin bridging.
+---
+
+# Design principles
+
+Clementine's design leverages BitVM to create a trust-minimized bridge between Bitcoin and Citrea L2. The [whitepaper](https://citrea.xyz/clementine_whitepaper.pdf) provides comprehensive technical details, while this page explains the key design decisions and mechanisms.
+
+<Note>
+  For deeper understanding of BitVM, see the [BitVM Bridge paper](https://bitvm.org/bitvm_bridge.pdf) and [BitVM2 documentation](http://bitvm.org/bitvm2).
+</Note>
+
+## Core design principles
+
+### Trust minimization through key deletion covenants
+
+Unlike traditional multisig bridges, Clementine uses an **N-of-N covenant** (key deletion mechanism) combined with an **M-of-N multisig** for governance.
+
+**How it works:**
+
+1. Bridge funds are held in an N-of-N arrangement where all signers must approve fund movements
+2. The Bridge Contract maintains a separate M-of-N multisig with authority to update the N-of-N signer set
+3. Signer set updates are subject to time restrictions (e.g., 30-day notice period)
+4. Users can exit during the notice period if they don't trust the new signer set
+
+**Security properties:**
+
+- Bridge remains **secure** as long as at least one of the N signers' keys is secure
+- Bridge remains **operational** as long as at least one operator participates
+- Funds already deposited under the old N-of-N remain protected even after signer set updates
+
+<Info>
+  This is fundamentally different from holding funds in an M-of-N multisig. The N-of-N acts as a covenant that restricts how UTXOs can be spent, while the M-of-N provides operational flexibility.
+</Info>
+
+### Pre-signed transaction game tree
+
+Clementine automates the BitVM2 challenge-response process through **pre-signed transactions** created during the peg-in phase.
+
+**Key concept:**
+
+The signer committee pre-signs a complete suite of potential transactions that govern any future peg-out attempt. This creates a deterministic "game tree" where operators and challengers execute pre-written scripts rather than creating new rules.
+
+**Transaction types:**
+
+```
+Deposit
+  └─ KickOff (initiates withdrawal)
+      ├─ Challenge Connector (watchtower challenges)
+      │   ├─ Watchtower Challenge Tx
+      │   ├─ Operator ChallengeACK (acknowledges challenge)
+      │   └─ Operator ChallengeNACK (slashes operator for ignoring challenge)
+      ├─ Assert Connector (operator claims correctness)
+      │   └─ Assert Tx (reveals proof via WOTS)
+      └─ Disprove Connector (challenger proves incorrectness)
+          ├─ BridgeDisproveScript
+          └─ ClementineDisproveScript
+```
+
+**Automation benefits:**
+
+- Eliminates trust in operators to follow protocol rules
+- Ensures watchtower challenges cannot be censored
+- Guarantees correct inputs to the Bridge Circuit
+- Enables trustless dispute resolution
+
+## Cryptographic mechanisms
+
+### MuSig2 aggregation
+
+Deposits are finalized using [MuSig2](https://github.com/bitcoin-core/secp256k1/blob/master/doc/musig.md#signing), which enables N-of-N threshold signatures.
+
+**Three-step process:**
+
+1. **Nonce aggregation** - Aggregator collects nonces from all verifiers and combines them
+2. **Signature aggregation** - Partial signatures are aggregated into a final Schnorr signature
+3. **Move tx creation** - Aggregated signatures authorize movement of deposited funds
+
+**Code reference:**
+
+```rust
+// From core/src/musig2.rs
+pub struct Musig2 {
+    pub aggregated_pubkey: XOnlyPublicKey,
+    pub pubkeys: Vec<PublicKey>,
+    pub tweak: Scalar,
+}
+
+impl Musig2 {
+    pub fn aggregate_nonces(&self, nonces: Vec<PublicKey>) -> PublicKey {
+        // MuSig2 nonce aggregation logic
+    }
+    
+    pub fn aggregate_signatures(&self, signatures: Vec<Signature>) -> Signature {
+        // MuSig2 signature aggregation logic
+    }
+}
+```
+
+<Warning>
+  MuSig2 requires careful nonce management. Nonce reuse can lead to private key exposure. Clementine stores nonces in the database to prevent reuse across signing sessions.
+</Warning>
+
+### Winternitz one-time signatures (WOTS)
+
+Clementine uses Winternitz signatures to commit data on-chain that can be verified within Bitcoin script.
+
+**Why Winternitz?**
+
+Bitcoin script can only verify Schnorr signatures that sign the transaction itself. However, Winternitz and Lamport signatures can be verified using hashes and equality checks, which Bitcoin's opcodes support.
+
+**Use cases in Clementine:**
+
+1. **Block hash commitment** - Operator commits the Bitcoin block hash containing their payout transaction in the KickOff transaction witness
+2. **Proof revelation** - Assert transactions use WOTS to reveal intermediate steps of Groth16 proof verification
+3. **State propagation** - WOTS enables passing state across UTXOs in the pre-signed transaction chain
+
+**Verification in script:**
+
+```bitcoin-script
+# Simplified WOTS verification
+OP_HASH256 <expected_hash> OP_EQUALVERIFY
+OP_HASH256 <next_expected_hash> OP_EQUALVERIFY
+# ... repeated for signature length
+```
+
+<Info>
+  WOTS is a one-time signature scheme. Each Winternitz key pair can only be used to sign a single message. Clementine generates fresh WOTS keys for each withdrawal operation.
+</Info>
+
+## Circuit design
+
+### Three-circuit architecture
+
+Clementine uses three specialized RISC Zero circuits:
+
+#### Header Chain Circuit (HCP)
+
+**Purpose:** Verify Bitcoin block header chains and compute cumulative work
+
+**Inputs:**
+- Block headers (up to a certain depth)
+- Previous MMR (Merkle Mountain Range) state
+- Target block header
+
+**Outputs:**
+- Updated MMR root
+- Cumulative proof-of-work
+- Validation of canonical chain
+
+**Code location:** `risc0-circuits/header-chain/guest/src/main.rs`
+
+#### Work-Only Circuit (WOP)
+
+**Purpose:** Lightweight proof-of-work verification for watchtower challenges
+
+**Difference from HCP:**
+- Simplified state verification
+- Faster proof generation
+- Smaller proof size
+- Sufficient for challenging operator claims
+
+**Watchtower workflow:**
+```rust
+// Watchtower generates WOP when challenging
+let work_only_proof = generate_work_only_proof(
+    &block_headers,
+    &target_block,
+);
+
+// Submit challenge with proof
+submit_challenge(work_only_proof, watchtower_signature);
+```
+
+**Code location:** `risc0-circuits/work-only/guest/src/main.rs`
+
+#### Bridge Circuit
+
+**Purpose:** Complete verification of withdrawal operations
+
+**Verification steps:**
+
+1. **HCP verification** - Validates operator's Header Chain Proof
+2. **Watchtower challenge processing** - Verifies Schnorr signatures on challenge transactions and processes Work-Only Proofs
+3. **SPV proof verification** - Confirms payout transaction inclusion in Bitcoin block
+4. **Light Client Proof verification** - Validates Citrea L2 state
+5. **EVM storage proof verification** - Confirms withdrawal data matches on-chain state
+
+**Key verification logic:**
+
+```rust
+// From circuits-lib/src/bridge_circuit/mod.rs
+pub fn bridge_circuit<G: Guest>(
+    zkvm_guest: G,
+    work_only_image_id: &[u8; 32],
+) {
+    // 1. Verify operator's HCP
+    verify_header_chain_proof(&operator_hcp);
+    
+    // 2. Process watchtower challenges
+    let max_watchtower_work = process_watchtower_challenges(
+        &watchtower_challenges,
+        work_only_image_id,
+    );
+    
+    // 3. Assert operator work > max watchtower work
+    assert!(operator_work > max_watchtower_work);
+    
+    // 4. Verify SPV proof
+    verify_spv_proof(&payout_tx, &block_header, &merkle_proof);
+    
+    // 5. Verify Light Client Proof and storage proofs
+    verify_light_client_proof(&lcp);
+    verify_storage_proofs(&withdrawal_data, &lcp_state_root);
+}
+```
+
+**Code location:** `risc0-circuits/bridge-circuit/guest/src/main.rs`
+
+<Note>
+  Circuit method IDs are network-specific and determined at compile time based on the `BITCOIN_NETWORK` environment variable (mainnet, testnet4, signet, regtest).
+</Note>
+
+### BitVM2 integration
+
+The Bridge Circuit is too large to execute on-chain, so Clementine uses BitVM2 to verify it:
+
+**Off-chain execution:**
+1. Operator executes the Bridge Circuit off-chain
+2. Generates a Groth16 proof of correct execution
+3. Commits the proof via WOTS in Assert transactions
+
+**On-chain challenge:**
+1. Challenger identifies an incorrect assertion
+2. Posts a Disprove transaction
+3. Executes a single step of the proof verification on-chain
+4. If the step is incorrect, challenger burns operator's collateral
+
+**Disprove scripts:**
+
+```
+BridgeDisproveScript:
+  - Verifies the Groth16 proof of the Bridge Circuit
+  - Checks proof matches WOTS commitment
+  - Validates public inputs
+
+ClementineDisproveScript:
+  - Ensures inputs to Bridge Circuit match on-chain state
+  - Verifies watchtower challenges weren't censored
+  - Validates block hash commitments
+```
+
+**Code location:** `circuits-lib/src/bridge_circuit/` (disprove script logic)
+
+## Design trade-offs
+
+### Bridge denomination: 10 BTC
+
+Clementine uses a **10 BTC denomination** for withdrawals rather than 1 BTC.
+
+**Reasoning:**
+
+- Each round transaction has a limited number of kickoff connectors
+- This limits withdrawal throughput
+- 10 BTC denomination increases capital efficiency per withdrawal
+- Smaller withdrawals can be batched on the Citrea L2 side
+
+<Warning>
+  The 10 BTC denomination is an open research question. As BitVM2 and circuit designs improve, this may be reduced to increase accessibility.
+</Warning>
+
+### Operator collateral requirements
+
+Operators must post collateral to participate in withdrawals.
+
+**Purpose:**
+- Economic security against malicious behavior
+- Incentive alignment with honest operation
+- Compensation fund for successful challenges
+
+**Slashing conditions:**
+- Ignoring watchtower challenges (via ChallengeNACK)
+- Providing incorrect proofs (via Disprove)
+- Censoring valid withdrawal requests
+
+### Watchtower incentive model
+
+Watchtowers earn rewards for detecting malicious operators.
+
+**Reward mechanism:**
+- Successful challenge claims a portion of operator collateral
+- Watchtower with highest valid work wins disputes
+- Incentivizes running full Bitcoin nodes
+- Encourages active monitoring
+
+**Challenge priority:**
+
+Watchtowers submit Work-Only Proofs sorted by total work. The Bridge Circuit:
+1. Verifies Schnorr signatures on all challenge transactions
+2. Sorts challenges by total work in descending order
+3. Verifies WOP Groth16 proofs until the first valid proof
+4. Requires operator work > maximum valid watchtower work
+
+## Flow diagrams
+
+### Deposit finalization
+
+```
+┌─────────────┐
+│   Deposit   │
+│ Transaction │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────────────────────────────────┐
+│     Aggregator Coordinates MuSig2       │
+├─────────────────────────────────────────┤
+│ 1. Collect nonces from all verifiers    │
+│ 2. Aggregate nonces                     │
+│ 3. Distribute aggregated nonce          │
+│ 4. Collect partial signatures           │
+│ 5. Aggregate into Schnorr signature     │
+│ 6. Collect move tx partial signatures   │
+│ 7. Create final move transaction        │
+└──────┬──────────────────────────────────┘
+       │
+       ▼
+┌─────────────┐
+│   Move TX   │
+│  on Bitcoin │
+└──────┬──────┘
+       │
+       ▼
+┌─────────────┐
+│ Citrea Mint │
+└─────────────┘
+```
+
+### Withdrawal with challenge
+
+```
+┌────────────────┐
+│ Citrea Burn    │
+│  (Withdrawal)  │
+└───────┬────────┘
+        │
+        ▼
+┌────────────────────┐
+│ Operator Creates   │
+│ Payout Transaction │
+└───────┬────────────┘
+        │
+        ▼
+┌───────────────────────┐
+│ KickOff Transaction   │
+│ (WOTS Block Hash)     │
+└───────┬───────────────┘
+        │
+        ├──► Watchtower Monitors
+        │         │
+        │         ├─ Honest? → No Challenge
+        │         │
+        │         └─ Malicious? → Submit Challenge
+        │                │
+        │                ▼
+        │         ┌──────────────────┐
+        │         │ Challenge TX     │
+        │         │ (WOP Proof)      │
+        │         └────┬─────────────┘
+        │              │
+        │              ▼
+        │         ┌──────────────────┐
+        │         │ Operator ACK     │
+        │         │ (or get slashed) │
+        │         └────┬─────────────┘
+        │              │
+        ▼              ▼
+┌────────────────────────────────┐
+│ Operator Posts Assert TX       │
+│ (Reveals Bridge Circuit Proof) │
+└────────┬───────────────────────┘
+         │
+         ├─► Proof Valid? → Withdrawal Completes
+         │
+         └─► Proof Invalid?
+                  │
+                  ▼
+         ┌──────────────────┐
+         │ Disprove TX      │
+         │ (Slash Operator) │
+         └──────────────────┘
+```
+
+## Development considerations
+
+### Automation feature flag
+
+Clementine can be built with optional automation:
+
+```bash
+# With automation (State Manager + Transaction Sender)
+cargo build --release --features automation
+
+# Without automation (manual operation)
+cargo build --release
+```
+
+**Automation enables:**
+- Automatic state machine progression
+- Background transaction monitoring
+- Automatic challenge response
+- Fee estimation and RBF
+
+### Network configuration
+
+Circuit method IDs and behaviors differ by network:
+
+```bash
+# Build for different networks
+BITCOIN_NETWORK=mainnet cargo build --release
+BITCOIN_NETWORK=testnet4 cargo build --release
+BITCOIN_NETWORK=regtest cargo build --release
+```
+
+**Network-specific differences:**
+- Proof-of-work difficulty validation
+- Block time expectations
+- Circuit method ID derivation
+- Genesis block parameters
+
+### BitVM cache
+
+BitVM computations can be cached to speed up proof generation:
+
+```bash
+# Download pre-generated cache
+wget https://static.testnet.citrea.xyz/common/bitvm_cache_v3.bin
+export BITVM_CACHE_PATH=/path/to/bitvm_cache.bin
+
+# Or generate automatically on first run
+# (takes significant time)
+```
+
+<Info>
+  Use `bitvm_cache_dev.bin` when `RISC0_DEV_MODE=1` is set for faster testing with reduced security.
+</Info>
+
+## Frequently asked questions
+
+### Why does the bridge use N-of-N instead of M-of-N?
+
+The N-of-N arrangement is a **key deletion covenant**, not a traditional multisig. While it appears that a single refusing signer could block deposits, the M-of-N multisig can update the signer set. Funds already deposited remain safe under the old covenant, and time-locked updates allow users to exit if they don't trust the new set.
+
+### Why use Winternitz signatures?
+
+Bitcoin script cannot verify arbitrary Schnorr signatures (only transaction signatures). Winternitz signatures can be verified using hash operations and equality checks, which are available in Bitcoin script. This enables state commitments and proof revelation within Bitcoin's scripting constraints.
+
+### How does BitVM2 enable on-chain verification?
+
+BitVM2's dissection game narrows disputes to a single computational step small enough to verify in Bitcoin script. Instead of verifying the entire Bridge Circuit on-chain, only the disputed step is executed, fitting within Bitcoin's script size and operation limits.
+
+### What happens if all verifiers go offline?
+
+If all N verifiers go offline simultaneously, new deposits cannot be finalized. However:
+- Existing deposited funds remain secure
+- The M-of-N multisig can update the verifier set
+- Time-locked updates provide users an exit window
+- The bridge remains secure as long as one verifier's key is safe
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/architecture">
+    Understand the system components
+  </Card>
+  <Card title="Security" icon="shield-halved" href="/security">
+    Learn about security considerations
+  </Card>
+  <Card title="Bridge circuits" icon="microchip" href="/circuits/overview">
+    Deep dive into circuit implementations
+  </Card>
+  <Card title="Configuration" icon="gear" href="/getting-started/configuration">
+    Configure your deployment
+  </Card>
+</CardGroup>

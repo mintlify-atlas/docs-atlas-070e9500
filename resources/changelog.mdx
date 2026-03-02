@@ -1,0 +1,195 @@
+---
+title: Changelog
+description: Version history and release notes for Clementine
+---
+
+# Changelog
+
+This page tracks changes, improvements, and updates to the Clementine bridge project.
+
+<Note>
+  For the most up-to-date changelog, see [CHANGELOG.md](https://github.com/chainwayxyz/clementine/blob/main/CHANGELOG.md) in the GitHub repository.
+</Note>
+
+## Version History
+
+### v0.4.0
+
+<Warning>
+  Release notes will be filled out after the v0.4.0 release.
+</Warning>
+
+This version is currently in development. Check the [GitHub releases page](https://github.com/chainwayxyz/clementine/releases) for updates.
+
+### Unreleased Changes
+
+The main branch contains ongoing development work. Recent improvements include:
+
+- Enhanced MuSig2 implementation for better signature aggregation
+- Improved RPC authentication with mutual TLS
+- Database migration system improvements
+- Performance optimizations for circuit generation
+- Expanded test coverage for integration scenarios
+
+<Tip>
+  Want to see what's being worked on? Check the [pull requests](https://github.com/chainwayxyz/clementine/pulls) on GitHub.
+</Tip>
+
+## Release Process
+
+Clementine follows semantic versioning:
+
+- **Major versions** (x.0.0) - Breaking changes that require migration
+- **Minor versions** (0.x.0) - New features, backward compatible
+- **Patch versions** (0.0.x) - Bug fixes and minor improvements
+
+## Staying Updated
+
+### Watch the Repository
+
+Stay informed about new releases:
+
+1. **Watch releases** on [GitHub](https://github.com/chainwayxyz/clementine)
+2. Click "Watch" → "Custom" → "Releases"
+3. Get notified when new versions are published
+
+### Upgrade Guides
+
+When upgrading between versions:
+
+1. **Read the release notes** for breaking changes
+2. **Update dependencies**:
+   ```bash
+   # Ensure you have the correct RISC Zero version
+   rzup install cargo-risczero 2.1.0
+   rzup install r0vm 2.1.0
+   ```
+
+3. **Run database migrations** if schema changed:
+   ```bash
+   # Migrations run automatically on startup
+   ./target/release/clementine-core verifier --config config.toml
+   ```
+
+4. **Update configuration files** if new options were added
+5. **Run tests** to verify compatibility:
+   ```bash
+   cargo test --all-features
+   ```
+
+## Recent Highlights
+
+### Architecture Improvements
+
+- **Multi-actor support**: Single binary can act as verifier, operator, or aggregator
+- **Flexible configuration**: Support for both TOML files and environment variables
+- **Docker support**: Pre-built images and compose files for easy deployment
+
+### Security Enhancements
+
+- **Mutual TLS (mTLS)**: Encrypted and authenticated gRPC communications
+- **Client certificate verification**: Role-based access control for RPC methods
+- **Key deletion covenant**: N-of-N multisig with trust-minimized security
+
+### Developer Experience
+
+- **Improved testing**: Separate unit and integration test commands
+- **Better documentation**: Comprehensive usage guides and API docs
+- **Helper scripts**: Automated certificate generation and deployment tools
+- **Docker Compose**: Full local development environment
+
+### Performance
+
+- **BitVM cache**: Pre-generated cache for faster startup
+- **Optimized circuits**: Improved proof generation performance
+- **Database optimizations**: Better connection pooling and query performance
+
+## Breaking Changes
+
+<Warning>
+  Always review breaking changes before upgrading to a new major version.
+</Warning>
+
+When we introduce breaking changes, we provide:
+
+- **Migration guides** for updating your code
+- **Deprecation warnings** in advance when possible
+- **Backward compatibility** for at least one minor version when feasible
+
+## Reporting Issues
+
+Found a bug in a specific version?
+
+1. **Check if it's fixed** in the latest release
+2. **Search existing issues** on GitHub
+3. **Create a new issue** with:
+   - Version number where bug occurs
+   - Steps to reproduce
+   - Expected vs actual behavior
+   - Environment details
+
+See [Contributing Guide](/resources/contributing) for more details on reporting issues.
+
+## Version Support
+
+### Active Support
+
+- **Current stable release**: Full support with bug fixes and security updates
+- **Previous minor version**: Security updates and critical bug fixes
+
+### End of Life
+
+Older versions may not receive updates. We recommend always using the latest stable release.
+
+<Tip>
+  Subscribe to the [Citrea blog](https://citrea.xyz/blog) for announcements about major releases and important updates.
+</Tip>
+
+## Contributing to Changelog
+
+The changelog is automatically updated based on GitHub activity. When submitting PRs:
+
+1. **Use conventional commits**:
+   ```
+   feat: add new withdrawal mechanism
+   fix: resolve race condition in deposit flow
+   docs: update API documentation
+   ```
+
+2. **Link to issues**:
+   ```
+   fix: resolve deposit timeout issue (#123)
+   ```
+
+3. **Add breaking change notes** in PR description if applicable
+
+See the [Contributing Guide](/resources/contributing#commit-message-guidelines) for more details.
+
+## Historical Releases
+
+<Note>
+  For complete version history, including detailed commit logs and merged PRs, visit the [GitHub releases page](https://github.com/chainwayxyz/clementine/releases).
+</Note>
+
+## Roadmap
+
+Interested in what's coming next?
+
+- Check [GitHub Issues](https://github.com/chainwayxyz/clementine/issues) for planned features
+- Join discussions in [GitHub Discussions](https://github.com/chainwayxyz/clementine/discussions)
+- Follow development on the [Citrea Discord](https://discord.gg/citrea)
+
+## Getting Help
+
+If you have questions about a specific version:
+
+- **Current version issues**: See [Troubleshooting](/resources/troubleshooting)
+- **Upgrade questions**: Ask in [GitHub Discussions](https://github.com/chainwayxyz/clementine/discussions)
+- **Bug reports**: Open an issue on [GitHub](https://github.com/chainwayxyz/clementine/issues)
+- **Community support**: Join [Discord](https://discord.gg/citrea)
+
+---
+
+<Tip>
+  Star the [Clementine repository](https://github.com/chainwayxyz/clementine) on GitHub to show your support and stay updated!
+</Tip>

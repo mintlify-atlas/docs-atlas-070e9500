@@ -1,0 +1,154 @@
+---
+title: Introduction
+description: Clementine is Citrea's BitVM-based, trust-minimized two-way peg program enabling secure asset transfers between Bitcoin and Citrea L2.
+---
+
+# Introduction to Clementine
+
+Clementine is Citrea's BitVM-based, trust-minimized two-way peg program that enables secure and verifiable asset transfers between the Bitcoin blockchain and the Citrea L2 rollup.
+
+<Note>
+  For a deep dive into the technical design, check out the [Clementine whitepaper](https://citrea.xyz/clementine_whitepaper.pdf).
+</Note>
+
+## What is Clementine?
+
+Clementine leverages BitVM to create a trust-minimized bridge between Bitcoin and Citrea. Unlike traditional bridges that rely on centralized intermediaries, Clementine uses cryptographic proofs and Bitcoin's security model to ensure that users maintain control of their assets throughout the bridging process.
+
+The bridge operates through a sophisticated system of actors that work together to facilitate deposits (peg-ins) and withdrawals (peg-out) while maintaining security through cryptographic verification and challenge-response mechanisms.
+
+<CardGroup cols={2}>
+  <Card title="Architecture" icon="sitemap" href="/architecture">
+    Explore the system architecture and core components
+  </Card>
+  <Card title="Design principles" icon="compass-drafting" href="/design">
+    Learn about the technical design and approach
+  </Card>
+  <Card title="Security" icon="shield-halved" href="/security">
+    Understand the security model and considerations
+  </Card>
+  <Card title="Quick start" icon="rocket" href="/getting-started/quickstart">
+    Get started with running Clementine
+  </Card>
+</CardGroup>
+
+## Key features
+
+### Trust-minimized design
+
+Clementine uses BitVM to enable trust-minimized bridging without requiring changes to Bitcoin's protocol. The bridge maintains security as long as at least one operator remains honest and participates.
+
+### N-of-N covenant with M-of-N fallback
+
+Funds are secured using an N-of-N covenant (key deletion mechanism), with an M-of-N multisig maintained by the Bridge Contract for updating the signer set. This provides security while maintaining operational flexibility.
+
+<Warning>
+  The N-of-N arrangement is fundamentally different from a traditional multisig wallet. It functions as a key deletion covenant where deposited funds remain safe as long as at least one signer's key is secure.
+</Warning>
+
+### Zero-knowledge proof verification
+
+Clementine utilizes RISC Zero circuits and Groth16 proofs to verify complex computations off-chain, with the ability to challenge incorrect operations on-chain through BitVM2's dispute resolution mechanism.
+
+### Flexible actor architecture
+
+The system supports multiple actor types that can be run independently or combined:
+
+- **Verifier** (also called signer) - Participates in the signing ceremony
+- **Operator** - Processes deposits and withdrawals  
+- **Aggregator** - Coordinates nonce and signature aggregation
+- **Watchtower** - Monitors operator behavior and submits challenges
+
+## How it works
+
+### Depositing (Peg-in)
+
+Deposits are finalized through a three-step process coordinated by the aggregator:
+
+1. **Nonce aggregation** - The aggregator collects nonces from all verifiers and aggregates them using MuSig2
+2. **Signature aggregation** - Partial signatures are collected and aggregated into a final Schnorr signature
+3. **Move transaction creation** - Verifiers return move transaction partial signatures which are aggregated to create the final move transaction
+
+### Withdrawing (Peg-out)
+
+Withdrawals are processed through an optimistic verification system:
+
+1. Operator creates a payout transaction and commits the block hash on-chain via Winternitz One-Time Signatures (WOTS)
+2. Watchtowers monitor operator behavior and can challenge suspicious activity
+3. If challenged, the operator must prove correctness using the Bridge Circuit
+4. Challengers can disprove incorrect proofs on-chain, slashing malicious operators
+
+<Info>
+  The bridge uses Winternitz signatures because Bitcoin script can only verify Schnorr signatures that sign transactions. Winternitz and Lamport signatures can be verified using hashes and equality checks, enabling state propagation across UTXOs.
+</Info>
+
+## Core components
+
+### Bridge circuits
+
+Clementine includes three zero-knowledge circuits implemented in RISC Zero:
+
+- **Header Chain Circuit** - Verifies Bitcoin block header chains and proof-of-work
+- **Work-Only Circuit** - A lightweight version for watchtower challenges
+- **Bridge Circuit** - The main circuit that verifies the complete withdrawal process
+
+### Communication layer
+
+All actors communicate via gRPC with mutual TLS (mTLS) authentication to ensure secure, authenticated connections between entities.
+
+### Storage layer
+
+Clementine uses PostgreSQL for persistent storage. Actors can share the same database or use separate instances depending on deployment requirements.
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Asset bridging" icon="bridge">
+    Transfer BTC between Bitcoin mainnet and Citrea L2 with minimal trust assumptions
+  </Card>
+  <Card title="DeFi integration" icon="coins">
+    Use bridged BTC in Citrea's DeFi ecosystem while maintaining Bitcoin's security guarantees
+  </Card>
+  <Card title="Operator service" icon="server">
+    Run operator and verifier services to earn fees while securing the bridge
+  </Card>
+  <Card title="Watchtower monitoring" icon="eye">
+    Monitor bridge operations and earn rewards for detecting malicious behavior
+  </Card>
+</CardGroup>
+
+## Why BitVM?
+
+BitVM enables verification of complex computations on Bitcoin without requiring protocol changes. The BitVM2 design allows Clementine to:
+
+- Execute the Bridge Circuit off-chain with minimal computational overhead
+- Challenge incorrect operations through an interactive dispute game
+- Verify single computational steps on-chain within Bitcoin's scripting limits
+- Leverage Bitcoin's security for dispute resolution
+
+The combination of pre-signed transactions, WOTS commitments, and BitVM2's challenge-response mechanism creates a trust-minimized system where malicious behavior can be proven and punished on-chain.
+
+## Next steps
+
+<Steps>
+  <Step title="Understand the architecture">
+    Read the [Architecture](/architecture) page to understand how Clementine's components work together.
+  </Step>
+  <Step title="Learn the design principles">
+    Explore the [Design](/design) page to understand the technical approach and trade-offs.
+  </Step>
+  <Step title="Review security">
+    Check out the [Security](/security) page to understand the security model and best practices.
+  </Step>
+  <Step title="Get started">
+    Follow the [Quick start](/getting-started/quickstart) guide to run your first Clementine node.
+  </Step>
+</Steps>
+
+## Resources
+
+- [Clementine Whitepaper](https://citrea.xyz/clementine_whitepaper.pdf)
+- [BitVM Bridge Paper](https://bitvm.org/bitvm_bridge.pdf)
+- [BitVM2 Documentation](http://bitvm.org/bitvm2)
+- [Source Code](https://github.com/chainwayxyz/clementine)
+- [API Documentation](https://chainwayxyz.github.io/clementine/clementine_core/)

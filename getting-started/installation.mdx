@@ -1,0 +1,213 @@
+---
+title: Installation
+description: Step-by-step guide to installing Rust, RISC Zero, and building Clementine
+---
+
+This guide walks you through installing all required dependencies and building Clementine from source.
+
+## Install Rust
+
+<Steps>
+  <Step title="Install Rust toolchain">
+    Clementine requires Rust version 1.88.0. Install Rust using rustup:
+
+    ```bash
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+    ```
+
+    Visit [rustup.rs](https://rustup.rs/) for more installation options.
+  </Step>
+
+  <Step title="Verify installation">
+    Verify that Rust is properly installed:
+
+    ```bash
+    rustc --version
+    ```
+  </Step>
+</Steps>
+
+## Install RISC Zero
+
+Clementine uses RISC Zero version 2.1.0 for zero-knowledge proof generation.
+
+<Steps>
+  <Step title="Install RISC Zero toolchain">
+    Run the RISC Zero installation script:
+
+    ```bash
+    curl -L https://risczero.com/install | bash
+    ```
+  </Step>
+
+  <Step title="Install specific RISC Zero versions">
+    Install the required RISC Zero components at version 2.1.0:
+
+    ```bash
+    rzup install cargo-risczero 2.1.0
+    rzup install r0vm 2.1.0
+    rzup install rust 1.88.0
+    ```
+
+    For more details, visit the [RISC Zero installation guide](https://dev.risczero.com/api/zkvm/install).
+  </Step>
+
+  <Step title="Install cargo-risczero">
+    Install the cargo-risczero plugin:
+
+    ```bash
+    cargo install cargo-risczero
+    ```
+  </Step>
+</Steps>
+
+## Set Up PostgreSQL
+
+Clementine uses PostgreSQL 15 for data persistence.
+
+<Steps>
+  <Step title="Run PostgreSQL with Docker">
+    The quickest way to get started is using Docker:
+
+    ```bash
+    docker run --name clementine-test-db \
+      -e POSTGRES_USER=clementine \
+      -e POSTGRES_PASSWORD=clementine \
+      -e POSTGRES_DB=clementine \
+      -p 5432:5432 \
+      --restart always \
+      -d postgres:15 \
+      bash -c "exec docker-entrypoint.sh postgres -c 'max_connections=1000'"
+    ```
+
+    <Note>
+    The database is configured with `max_connections=1000` to support multiple concurrent Clementine services.
+    </Note>
+  </Step>
+
+  <Step title="Alternative: Install PostgreSQL natively">
+    Alternatively, install PostgreSQL 15 or later using your system's package manager:
+
+    <CodeGroup>
+    ```bash macOS
+    brew install postgresql@15
+    brew services start postgresql@15
+    ```
+
+    ```bash Ubuntu/Debian
+    sudo apt install postgresql-15
+    sudo systemctl start postgresql
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Build Clementine
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/chainwayxyz/clementine.git
+    cd clementine
+    ```
+  </Step>
+
+  <Step title="Build the project">
+    Build Clementine in release mode:
+
+    ```bash
+    cargo build --release
+    ```
+
+    To enable automation features (State Manager and Transaction Sender):
+
+    ```bash
+    cargo build --release --features automation
+    ```
+
+    <Note>
+    The automation feature enables automatic fulfillment of verifier/operator/aggregator duties and automatic transaction management.
+    </Note>
+  </Step>
+
+  <Step title="Verify the build">
+    Check that the binary was created successfully:
+
+    ```bash
+    ./target/release/clementine-core --help
+    ```
+  </Step>
+</Steps>
+
+## Generate TLS Certificates
+
+Clementine uses mutual TLS (mTLS) for secure gRPC communications.
+
+<Steps>
+  <Step title="Generate certificates for testing">
+    For development and testing, generate self-signed certificates:
+
+    ```bash
+    ./scripts/generate_certs.sh
+    ```
+
+    This creates certificates in the following structure:
+
+    ```
+    certs/
+    ├── ca/
+    │   ├── ca.key
+    │   └── ca.pem
+    ├── server/
+    │   ├── server.key
+    │   └── server.pem
+    ├── client/
+    │   ├── client.key
+    │   └── client.pem
+    └── aggregator/
+        ├── aggregator.key
+        └── aggregator.pem
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+For production deployments, use certificates signed by a trusted Certificate Authority (CA) rather than self-signed certificates. Keep private keys (*.key files) secure and never commit them to version control.
+</Warning>
+
+## Download BitVM Cache (Optional)
+
+To speed up initialization, download pre-generated BitVM cache files:
+
+```bash
+# For production mode
+wget https://static.testnet.citrea.xyz/common/bitvm_cache_v3.bin -O bitvm_cache.bin
+export BITVM_CACHE_PATH=/path/to/bitvm_cache.bin
+
+# For development mode (RISC0_DEV_MODE=1)
+wget https://static.testnet.citrea.xyz/common/bitvm_cache_dev.bin -O bitvm_cache_dev.bin
+export BITVM_CACHE_PATH=/path/to/bitvm_cache_dev.bin
+```
+
+<Note>
+If you don't download the cache files, they will be generated automatically on first run, which may take some time.
+</Note>
+
+## Set Environment Variables
+
+Set the required environment variables:
+
+```bash
+# Required: Minimum stack size
+export RUST_MIN_STACK=33554432
+
+# Optional: Enable development mode for testing
+export RISC0_DEV_MODE=1
+
+# Optional: Enable full backtraces for debugging
+export RUST_LIB_BACKTRACE=full
+```
+
+## Next Steps
+
+Now that Clementine is installed, proceed to [Configuration](/getting-started/configuration) to set up your configuration files and environment.

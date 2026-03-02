@@ -1,0 +1,499 @@
+---
+title: "VerifierService"
+description: "gRPC API reference for ClementineVerifier service methods"
+---
+
+The `ClementineVerifier` service handles verifier operations including parameter management, deposit signing, optimistic payouts, and transaction debugging.
+
+## GetParams
+
+Returns verifier metadata. Called once per setup to retrieve the verifier's public key.
+
+**Request:** `Empty`
+
+**Response:** `VerifierParams`
+
+<ResponseField name="public_key" type="bytes" required>
+  The verifier's public key
+</ResponseField>
+
+**Usage:** Called by aggregator during setup to distribute verifier public keys to all verifiers.
+
+---
+
+## GetCompatibilityParams
+
+Returns protocol parameters that affect contract transactions, Citrea syncing, and version compatibility.
+
+**Request:** `Empty`
+
+**Response:** `CompatibilityParamsRPC`
+
+<ResponseField name="protocol_paramset" type="string" required>
+  Protocol parameter set in JSON format
+</ResponseField>
+
+<ResponseField name="security_council" type="string" required>
+  Security council configuration
+</ResponseField>
+
+<ResponseField name="citrea_chain_id" type="uint32" required>
+  Citrea chain identifier
+</ResponseField>
+
+<ResponseField name="clementine_version" type="string" required>
+  Current Clementine version
+</ResponseField>
+
+<ResponseField name="bridge_circuit_constant" type="bytes" required>
+  Bridge circuit constant value
+</ResponseField>
+
+<ResponseField name="sha256_bitvm_cache" type="bytes" required>
+  SHA256 BitVM cache data
+</ResponseField>
+
+---
+
+## SetOperator
+
+Saves operator information to the verifier's database.
+
+**Request:** `stream OperatorParams`
+
+<ParamField body="operator_details" type="OperatorConfig">
+  Operator's configuration details
+  
+  <Expandable title="OperatorConfig fields">
+    <ResponseField name="collateral_funding_outpoint" type="Outpoint" required>
+      Outpoint for collateral funding
+    </ResponseField>
+    <ResponseField name="xonly_pk" type="string" required>
+      Operator's x-only public key
+    </ResponseField>
+    <ResponseField name="wallet_reimburse_address" type="string" required>
+      Wallet address for reimbursements
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="winternitz_pubkeys" type="WinternitzPubkey">
+  Winternitz public keys for each kickoff UTXO (used to commit blockhash)
+  
+  <Expandable title="WinternitzPubkey fields">
+    <ResponseField name="digit_pubkey" type="repeated bytes" required>
+      Array of digit public keys
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="unspent_kickoff_sig" type="SchnorrSig">
+  Unspent kickoff signatures
+  
+  <Expandable title="SchnorrSig fields">
+    <ResponseField name="schnorr_sig" type="bytes" required>
+      Schnorr signature bytes
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+**Response:** `Empty`
+
+**Usage:** Called by aggregator during setup to distribute operator public keys to all verifiers.
+
+---
+
+## SetOperatorKeys
+
+Sets the operator's Winternitz keys and challenge ACK hashes, saving them to the database.
+
+**Request:** `OperatorKeysWithDeposit`
+
+<ParamField body="operator_keys" type="OperatorKeys" required>
+  Operator's cryptographic keys
+  
+  <Expandable title="OperatorKeys fields">
+    <ResponseField name="winternitz_pubkeys" type="repeated WinternitzPubkey" required>
+      Winternitz public keys for each BitVM assert transaction
+    </ResponseField>
+    <ResponseField name="challenge_ack_digests" type="repeated ChallengeACKDigest" required>
+      Hashes of preimages used to ACK watchtower challenges
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="deposit_params" type="DepositParams" required>
+  Deposit parameters containing deposit details, actors, and security council
+</ParamField>
+
+<ParamField body="operator_xonly_pk" type="bytes" required>
+  Operator's x-only public key
+</ParamField>
+
+**Response:** `Empty`
+
+**Usage:** Called by aggregator during new deposit to distribute operator deposit information to all verifiers.
+
+---
+
+## NonceGen
+
+Generates nonces for a deposit signing session.
+
+**Request:** `NonceGenRequest`
+
+<ParamField body="num_nonces" type="uint32" required>
+  Number of nonces to generate
+</ParamField>
+
+**Response:** `stream NonceGenResponse`
+
+<ResponseField name="first_response" type="NonceGenFirstResponse">
+  Initial response containing session metadata
+  
+  <Expandable title="NonceGenFirstResponse fields">
+    <ResponseField name="id" type="string" required>
+      Nonce session ID (string representation of u128 number)
+    </ResponseField>
+    <ResponseField name="num_nonces" type="uint32" required>
+      Number of nonces to generate
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="pub_nonce" type="bytes">
+  Individual public nonce (streamed after first response)
+</ResponseField>
+
+**Usage:** Called by aggregator during new deposit to generate nonces for MuSig2 signing.
+
+---
+
+## DepositSign
+
+Signs deposit transactions using aggregated nonces and the verifier's secret nonce.
+
+**Request:** `stream VerifierDepositSignParams`
+
+<ParamField body="deposit_sign_first_param" type="DepositSignSession">
+  Initial deposit sign session containing deposit parameters and nonce responses
+  
+  <Expandable title="DepositSignSession fields">
+    <ResponseField name="deposit_params" type="DepositParams" required>
+      Deposit parameters
+    </ResponseField>
+    <ResponseField name="nonce_gen_first_responses" type="repeated NonceGenFirstResponse" required>
+      Nonce generation responses from all verifiers
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="agg_nonce" type="bytes">
+  Aggregated nonce for signing
+</ParamField>
+
+**Response:** `stream PartialSig`
+
+<ResponseField name="partial_sig" type="bytes" required>
+  Partial signature for MuSig2 aggregation
+</ResponseField>
+
+**Usage:** Called by aggregator during new deposit for MuSig2 signing protocol.
+
+---
+
+## OptimisticPayoutSign
+
+Signs optimistic payout transactions with the given aggregated nonce and withdrawal information.
+
+**Request:** `OptimisticPayoutParams`
+
+<ParamField body="opt_withdrawal" type="OptimisticWithdrawParams" required>
+  Optimistic withdrawal parameters
+  
+  <Expandable title="OptimisticWithdrawParams fields">
+    <ResponseField name="withdrawal" type="WithdrawParams" required>
+      Withdrawal parameters
+    </ResponseField>
+    <ResponseField name="verification_signature" type="string">
+      ECDSA signature from Citrea/aggregator for authentication
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="nonce_gen" type="NonceGenFirstResponse" required>
+  Nonce generation response
+</ParamField>
+
+<ParamField body="agg_nonce" type="bytes" required>
+  Aggregated nonce for signing
+</ParamField>
+
+**Response:** `PartialSig`
+
+<ResponseField name="partial_sig" type="bytes" required>
+  Partial signature for the optimistic payout
+</ResponseField>
+
+---
+
+## DepositFinalize
+
+Verifies all signatures and signs the move-to-vault transaction.
+
+**Request:** `stream VerifierDepositFinalizeParams`
+
+<ParamField body="deposit_sign_first_param" type="DepositSignSession">
+  Deposit sign session data
+</ParamField>
+
+<ParamField body="schnorr_sig" type="bytes">
+  Aggregated Schnorr signature
+</ParamField>
+
+<ParamField body="move_tx_agg_nonce" type="bytes">
+  Aggregated nonce for move-to-vault transaction
+</ParamField>
+
+<ParamField body="emergency_stop_agg_nonce" type="bytes">
+  Aggregated nonce for emergency stop transaction
+</ParamField>
+
+**Response:** `VerifierDepositFinalizeResponse`
+
+<ResponseField name="move_to_vault_partial_sig" type="bytes" required>
+  Partial signature for move-to-vault transaction
+</ResponseField>
+
+<ResponseField name="emergency_stop_partial_sig" type="bytes" required>
+  Partial signature for emergency stop transaction
+</ResponseField>
+
+**Usage:** Called by aggregator during new deposit finalization.
+
+---
+
+## DebugTx
+
+Retrieves the current state and history of a transaction for debugging purposes.
+
+**Request:** `TxDebugRequest`
+
+<ParamField body="tx_id" type="uint32" required>
+  Internal transaction ID to debug
+</ParamField>
+
+**Response:** `TxDebugInfo`
+
+<ResponseField name="id" type="uint32" required>
+  Transaction internal ID
+</ResponseField>
+
+<ResponseField name="is_active" type="bool" required>
+  Whether the transaction is currently active
+</ResponseField>
+
+<ResponseField name="current_state" type="string" required>
+  Current state of the transaction
+</ResponseField>
+
+<ResponseField name="submission_errors" type="repeated TxDebugSubmissionError" required>
+  History of submission errors
+</ResponseField>
+
+<ResponseField name="fee_payer_utxos" type="repeated TxDebugFeePayerUtxo" required>
+  UTXOs used for fee payment
+</ResponseField>
+
+<ResponseField name="created_at" type="string" required>
+  Timestamp of transaction creation
+</ResponseField>
+
+<ResponseField name="txid" type="Txid" required>
+  Bitcoin transaction ID
+</ResponseField>
+
+<ResponseField name="fee_paying_type" type="string" required>
+  Fee payment method (CPFP, RBF, etc.)
+</ResponseField>
+
+<ResponseField name="fee_payer_utxos_count" type="uint32" required>
+  Total count of fee payer UTXOs
+</ResponseField>
+
+<ResponseField name="fee_payer_utxos_confirmed_count" type="uint32" required>
+  Count of confirmed fee payer UTXOs
+</ResponseField>
+
+<ResponseField name="raw_tx" type="bytes" required>
+  Raw transaction bytes
+</ResponseField>
+
+<ResponseField name="metadata" type="TxMetadata" required>
+  Transaction metadata including deposit outpoint, operator, and transaction type
+</ResponseField>
+
+---
+
+## RestartBackgroundTasks
+
+Restarts all background tasks for the verifier.
+
+**Request:** `Empty`
+
+**Response:** `Empty`
+
+---
+
+## InternalHandleKickoff
+
+Checks if a kickoff transaction is malicious and attempts to punish the operator if necessary.
+
+**Request:** `Txid`
+
+<ParamField body="txid" type="bytes" required>
+  Bitcoin transaction ID to check
+</ParamField>
+
+**Response:** `Empty`
+
+<Warning>
+  This is an internal method intended for verifier operations.
+</Warning>
+
+---
+
+## GetCurrentStatus
+
+Returns the current status of tasks running on the verifier and their last synced heights.
+
+**Request:** `Empty`
+
+**Response:** `EntityStatus`
+
+<ResponseField name="automation" type="bool" required>
+  Whether automation is enabled
+</ResponseField>
+
+<ResponseField name="wallet_balance" type="string">
+  Current wallet balance
+</ResponseField>
+
+<ResponseField name="tx_sender_synced_height" type="uint32">
+  Last synced height for transaction sender
+</ResponseField>
+
+<ResponseField name="finalized_synced_height" type="uint32">
+  Last synced height for finalized blocks
+</ResponseField>
+
+<ResponseField name="hcp_last_proven_height" type="uint32">
+  Last proven height for HCP
+</ResponseField>
+
+<ResponseField name="stopped_tasks" type="StoppedTasks" required>
+  List of stopped background tasks
+</ResponseField>
+
+<ResponseField name="rpc_tip_height" type="uint32">
+  Current RPC tip height
+</ResponseField>
+
+<ResponseField name="bitcoin_syncer_synced_height" type="uint32">
+  Last synced height for Bitcoin syncer
+</ResponseField>
+
+<ResponseField name="state_manager_next_height" type="uint32">
+  Next height for state manager
+</ResponseField>
+
+<ResponseField name="btc_fee_rate_sat_vb" type="uint64">
+  Current Bitcoin fee rate in sat/vB
+</ResponseField>
+
+---
+
+## InternalCreateSignedTxs
+
+Creates and signs transactions for a given deposit and kickoff.
+
+**Request:** `TransactionRequest`
+
+<ParamField body="deposit_outpoint" type="Outpoint" required>
+  Deposit UTXO outpoint
+</ParamField>
+
+<ParamField body="kickoff_id" type="KickoffId" required>
+  Kickoff identifier
+  
+  <Expandable title="KickoffId fields">
+    <ResponseField name="operator_xonly_pk" type="bytes" required>
+      Operator's x-only public key
+    </ResponseField>
+    <ResponseField name="round_idx" type="uint32" required>
+      Round index
+    </ResponseField>
+    <ResponseField name="kickoff_idx" type="uint32" required>
+      Kickoff index
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+**Response:** `SignedTxsWithType`
+
+<ResponseField name="signed_txs" type="repeated SignedTxWithType" required>
+  Array of signed transactions with their types
+</ResponseField>
+
+<Warning>
+  This method is only used in tests and internal operations.
+</Warning>
+
+---
+
+## InternalCreateWatchtowerChallenge
+
+Signs the verifier's own watchtower challenge transaction for the corresponding kickoff.
+
+**Request:** `TransactionRequest`
+
+<ParamField body="deposit_outpoint" type="Outpoint" required>
+  Deposit UTXO outpoint
+</ParamField>
+
+<ParamField body="kickoff_id" type="KickoffId" required>
+  Kickoff identifier
+</ParamField>
+
+**Response:** `RawTxWithRbfInfo`
+
+<ResponseField name="raw_tx" type="bytes" required>
+  Raw signed transaction bytes
+</ResponseField>
+
+<ResponseField name="rbf_info" type="RbfSigningInfoRpc" required>
+  RBF (Replace-By-Fee) signing information
+  
+  <Expandable title="RbfSigningInfoRpc fields">
+    <ResponseField name="merkle_root" type="bytes" required>
+      Merkle root for RBF
+    </ResponseField>
+    <ResponseField name="vout" type="uint32" required>
+      Output index
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Vergen
+
+Returns version and build information.
+
+**Request:** `Empty`
+
+**Response:** `VergenResponse`
+
+<ResponseField name="response" type="string" required>
+  Version and build information string
+</ResponseField>

@@ -1,0 +1,381 @@
+---
+title: "AggregatorService"
+description: "gRPC API reference for ClementineAggregator service methods"
+---
+
+The `ClementineAggregator` service orchestrates the Clementine protocol by coordinating verifiers, operators, and watchtowers for deposits, withdrawals, and system setup.
+
+## GetNofnAggregatedXonlyPk
+
+Returns the aggregated n-of-n x-only public key and number of verifiers.
+
+**Request:** `Empty`
+
+**Response:** `NofnResponse`
+
+<ResponseField name="nofn_xonly_pk" type="bytes" required>
+  Aggregated n-of-n x-only public key
+</ResponseField>
+
+<ResponseField name="num_verifiers" type="uint32" required>
+  Number of verifiers participating
+</ResponseField>
+
+---
+
+## GetCompatibilityDataFromEntities
+
+Returns compatibility data from all entities (operators, verifiers, aggregator).
+
+**Request:** `Empty`
+
+**Response:** `EntitiesCompatibilityData`
+
+<ResponseField name="entities_compatibility_data" type="repeated EntityDataWithId" required>
+  Compatibility data from each entity
+  
+  <Expandable title="EntityDataWithId fields">
+    <ResponseField name="entity_id" type="EntityId" required>
+      Entity identifier
+      
+      <Expandable title="EntityId fields">
+        <ResponseField name="kind" type="EntityType" required>
+          Entity type (OPERATOR, VERIFIER, or AGGREGATOR)
+        </ResponseField>
+        <ResponseField name="id" type="string" required>
+          Entity ID string
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="data" type="CompatibilityParamsRPC">
+      Compatibility parameters (on success)
+    </ResponseField>
+    <ResponseField name="error" type="string">
+      Error message (on failure)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## GetCompatibilityParams
+
+Returns protocol parameters that affect contract transactions, Citrea syncing, and version compatibility.
+
+**Request:** `Empty`
+
+**Response:** `CompatibilityParamsRPC`
+
+<ResponseField name="protocol_paramset" type="string" required>
+  Protocol parameter set in JSON format
+</ResponseField>
+
+<ResponseField name="security_council" type="string" required>
+  Security council configuration
+</ResponseField>
+
+<ResponseField name="citrea_chain_id" type="uint32" required>
+  Citrea chain identifier
+</ResponseField>
+
+<ResponseField name="clementine_version" type="string" required>
+  Current Clementine version
+</ResponseField>
+
+<ResponseField name="bridge_circuit_constant" type="bytes" required>
+  Bridge circuit constant value
+</ResponseField>
+
+<ResponseField name="sha256_bitvm_cache" type="bytes" required>
+  SHA256 BitVM cache data
+</ResponseField>
+
+---
+
+## Setup
+
+Sets up the system of verifiers, watchtowers, and operators.
+
+**Request:** `Empty`
+
+**Response:** `VerifierPublicKeys`
+
+<ResponseField name="verifier_public_keys" type="repeated bytes" required>
+  Array of verifier public keys
+</ResponseField>
+
+**Process:**
+1. Collects verifier keys from each verifier
+2. Distributes these verifier keys to all verifiers
+3. Collects all operator configs from each operator
+4. Distributes these operator configs to all verifiers
+
+**Usage:** Called by the clementine-backend service during initial setup.
+
+---
+
+## NewDeposit
+
+Creates a new deposit by orchestrating the MuSig2 signing protocol across all verifiers.
+
+**Request:** `Deposit`
+
+<ParamField body="deposit_outpoint" type="Outpoint" required>
+  User's deposit UTXO
+  
+  <Expandable title="Outpoint fields">
+    <ResponseField name="txid" type="Txid" required>
+      Transaction ID (bytes)
+    </ResponseField>
+    <ResponseField name="vout" type="uint32" required>
+      Output index
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="base_deposit" type="BaseDeposit">
+  New original deposit request details
+  
+  <Expandable title="BaseDeposit fields">
+    <ResponseField name="evm_address" type="bytes" required>
+      User's EVM address
+    </ResponseField>
+    <ResponseField name="recovery_taproot_address" type="string" required>
+      User's recovery taproot address
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="replacement_deposit" type="ReplacementDeposit">
+  Replacement deposit details
+  
+  <Expandable title="ReplacementDeposit fields">
+    <ResponseField name="old_move_txid" type="Txid" required>
+      Move-to-vault txid being replaced
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+**Response:** `RawSignedTx`
+
+<ResponseField name="raw_tx" type="bytes" required>
+  Raw signed move-to-vault transaction
+</ResponseField>
+
+**Process:**
+1. Calls `DepositNonceGen` for every verifier
+2. Aggregates nonces and sends to `DepositSign`
+3. Aggregates partial signatures and sends to `DepositFinalize`
+4. Calls operator to get their signatures
+5. Collects partial signatures and creates the move-to-vault transaction
+
+**Usage:** Called by clementine-backend service to initiate a deposit.
+
+---
+
+## Withdraw
+
+Initiates a withdrawal by calling withdraw on specified operators or all operators.
+
+**Request:** `AggregatorWithdrawalInput`
+
+<ParamField body="withdrawal" type="WithdrawParamsWithSig" required>
+  Withdrawal parameters with optional verification signature
+  
+  <Expandable title="WithdrawParamsWithSig fields">
+    <ResponseField name="withdrawal" type="WithdrawParams" required>
+      Core withdrawal parameters
+    </ResponseField>
+    <ResponseField name="verification_signature" type="string">
+      ECDSA signature from Citrea/aggregator for authentication
+    </ResponseField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="operator_xonly_pks" type="repeated XOnlyPublicKeyRpc" required>
+  List of operator x-only public keys to send withdrawal request to. If empty, sends to all operators.
+</ParamField>
+
+**Response:** `AggregatorWithdrawResponse`
+
+<ResponseField name="withdraw_responses" type="repeated OperatorWithrawalResponse" required>
+  Response from each operator
+  
+  <Expandable title="OperatorWithrawalResponse fields">
+    <ResponseField name="operator_xonly_pk" type="XOnlyPublicKeyRpc" required>
+      Operator's x-only public key
+    </ResponseField>
+    <ResponseField name="raw_tx" type="RawSignedTx">
+      Raw signed payout transaction (on success)
+    </ResponseField>
+    <ResponseField name="error" type="string">
+      Error message (on failure)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Usage:** Called by clementine-backend service to initiate a withdrawal.
+
+---
+
+## OptimisticPayout
+
+Performs an optimistic payout to reimburse a peg-out from Citrea.
+
+**Request:** `OptimisticWithdrawParams`
+
+<ParamField body="withdrawal" type="WithdrawParams" required>
+  Withdrawal parameters
+</ParamField>
+
+<ParamField body="verification_signature" type="string">
+  ECDSA signature from Citrea/aggregator for manual verification
+</ParamField>
+
+**Response:** `RawSignedTx`
+
+<ResponseField name="raw_tx" type="bytes" required>
+  Raw signed optimistic payout transaction
+</ResponseField>
+
+---
+
+## InternalSendTx
+
+Sends a pre-signed transaction to the network.
+
+**Request:** `SendTxRequest`
+
+<ParamField body="raw_tx" type="RawSignedTx" required>
+  Raw signed transaction
+</ParamField>
+
+<ParamField body="fee_type" type="FeeType" required>
+  Fee payment method
+  
+  Options:
+  - `CPFP` - Child-Pays-For-Parent
+  - `RBF` - Replace-By-Fee
+  - `NO_FUNDING` - No additional fee funding
+</ParamField>
+
+**Response:** `Empty`
+
+---
+
+## SendMoveToVaultTx
+
+Sends a move-to-vault transaction to the network.
+
+**Request:** `SendMoveTxRequest`
+
+<ParamField body="raw_tx" type="RawSignedTx" required>
+  Raw signed move-to-vault transaction
+</ParamField>
+
+<ParamField body="deposit_outpoint" type="Outpoint" required>
+  Associated deposit outpoint
+</ParamField>
+
+**Response:** `Txid`
+
+<ResponseField name="txid" type="bytes" required>
+  Transaction ID of the broadcasted move-to-vault transaction
+</ResponseField>
+
+---
+
+## GetEntityStatuses
+
+Returns the current status of all operators and verifiers.
+
+**Request:** `GetEntityStatusesRequest`
+
+<ParamField body="restart_tasks" type="bool" required>
+  If true, restart stopped tasks on entities before returning status
+</ParamField>
+
+**Response:** `EntityStatuses`
+
+<ResponseField name="entity_statuses" type="repeated EntityStatusWithId" required>
+  Status information for each entity
+  
+  <Expandable title="EntityStatusWithId fields">
+    <ResponseField name="entity_id" type="EntityId" required>
+      Entity identifier
+    </ResponseField>
+    <ResponseField name="status" type="EntityStatus">
+      Entity status (on success)
+      
+      <Expandable title="EntityStatus fields">
+        <ResponseField name="automation" type="bool" required>
+          Whether automation is enabled
+        </ResponseField>
+        <ResponseField name="wallet_balance" type="string">
+          Current wallet balance
+        </ResponseField>
+        <ResponseField name="tx_sender_synced_height" type="uint32">
+          Transaction sender synced height
+        </ResponseField>
+        <ResponseField name="finalized_synced_height" type="uint32">
+          Finalized blocks synced height
+        </ResponseField>
+        <ResponseField name="stopped_tasks" type="StoppedTasks" required>
+          List of stopped background tasks
+        </ResponseField>
+        <ResponseField name="rpc_tip_height" type="uint32">
+          Current RPC tip height
+        </ResponseField>
+        <ResponseField name="bitcoin_syncer_synced_height" type="uint32">
+          Bitcoin syncer synced height
+        </ResponseField>
+        <ResponseField name="btc_fee_rate_sat_vb" type="uint64">
+          Current Bitcoin fee rate in sat/vB
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="err" type="EntityError">
+      Error information (on failure)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## InternalGetEmergencyStopTx
+
+Creates emergency stop transactions without broadcasting them.
+
+**Request:** `GetEmergencyStopTxRequest`
+
+<ParamField body="txids" type="repeated Txid" required>
+  Array of transaction IDs to create emergency stop transactions for
+</ParamField>
+
+**Response:** `GetEmergencyStopTxResponse`
+
+<ResponseField name="txids" type="repeated Txid" required>
+  Array of transaction IDs
+</ResponseField>
+
+<ResponseField name="encrypted_emergency_stop_txs" type="repeated bytes" required>
+  Array of encrypted emergency stop transactions (approximately 3 sat/vbyte fee)
+</ResponseField>
+
+<Info>
+  Transactions are not broadcasted. Set `add_anchor` to true to add an anchor output for CPFP.
+</Info>
+
+---
+
+## Vergen
+
+Returns version and build information.
+
+**Request:** `Empty`
+
+**Response:** `VergenResponse`
+
+<ResponseField name="response" type="string" required>
+  Version and build information string
+</ResponseField>

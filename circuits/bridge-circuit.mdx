@@ -1,0 +1,328 @@
+---
+title: Bridge Circuit
+description: Complete verification logic for trust-minimized Bitcoin peg-out operations in Clementine
+---
+
+The Bridge Circuit is the central component of Clementine's verification system, orchestrating multiple cryptographic proofs to ensure secure and verifiable peg-out operations. It validates that operators follow the canonical Bitcoin chain and process withdrawals correctly.
+
+## Role in Clementine
+
+The Bridge Circuit enables trust-minimized asset transfers between Bitcoin and Citrea L2 by acting as an automated verifier that enforces protocol rules. Unlike traditional bridges that rely on trusted intermediaries, Clementine uses zero-knowledge proofs to cryptographically verify all bridge operations.
+
+### Covenant Emulation
+
+The bridge circuit works in conjunction with pre-signed transactions to emulate Bitcoin covenants:
+
+- **Pre-Signed Transaction Set**: During peg-in, a committee of n signers pre-signs transactions that govern future peg-outs
+- **Deterministic Game Tree**: Creates a predictable and unalterable execution path for BitVM2 challenge-response
+- **Automated Enforcement**: The circuit receives correct inputs guaranteed by the pre-signed transaction structure
+
+<Accordion title="How Pre-Signed Transactions Connect to the Circuit">
+  **KickOff Transaction**
+  - Operator initiates peg-out and activates pre-signed connector outputs
+  - Commits payout block hash data on-chain via Winternitz One-Time Signature (WOTS)
+  - Each connector can only be spent by specific pre-signed transactions
+
+  **Watchtower Challenge Flow**
+  - Watchtower spends personal funds to submit challenge transaction with Work Only Proof
+  - Operator must acknowledge via pre-signed OperatorChallengeACK transaction
+  - If Operator fails to acknowledge, Challenger uses pre-signed OperatorChallengeNACK to slash them
+  - Ensures `watchtower_sent_challenge` boolean array input to Bridge Circuit is accurate
+
+  **Assert and Disprove**
+  - Operator posts Assert transactions with off-chain Bridge Circuit execution results
+  - Challengers use pre-signed Disprove transaction to verify on-chain if errors exist
+  - Disprove logic includes Groth16 proof verification encoded in pre-signed outputs
+</Accordion>
+
+## BitVM2 Integration
+
+The Bridge Circuit integrates with BitVM2 to verify computations that exceed Bitcoin Script size limits:
+
+<Steps>
+  <Step title="Off-Chain Execution">
+    Operator executes the payout transaction and generates a Bridge Circuit proof off-chain
+  </Step>
+  
+  <Step title="On-Chain Commitment">
+    Operator commits the payout block hash in the KickOff transaction witness via WOTS
+  </Step>
+  
+  <Step title="Challenge Initiation">
+    Any Challenger who suspects malicious behavior can spend the Challenge connector
+  </Step>
+  
+  <Step title="Dissection Game">
+    BitVM2 facilitates a binary search to identify the exact disputed computation step
+  </Step>
+  
+  <Step title="On-Chain Verification">
+    The disputed step executes within Bitcoin Script via Disprove transaction
+  </Step>
+</Steps>
+
+### Disprove Scripts
+
+Two types of scripts handle on-chain verification:
+
+**BridgeDisproveScript**
+- Verifies the main Bridge Circuit computation
+- Uses Groth16 proof to validate circuit execution
+- Checks Header Chain Proof, Watchtower challenges, SPV, and storage proofs
+
+**ClementineDisproveScript**
+- Ensures inputs to Bridge Circuit match on-chain state
+- Verifies Watchtower challenges weren't censored
+- Confirms block hash commitments via WOTS are used correctly
+
+## Verification Logic
+
+The Bridge Circuit performs comprehensive verification across multiple domains:
+
+### 1. Header Chain Proof Verification
+
+```rust
+// From bridge-circuit/guest/src/main.rs and circuits-lib/src/bridge_circuit/mod.rs
+assert_eq!(
+    HEADER_CHAIN_METHOD_ID, input.hcp.method_id,
+    "Invalid method ID for header chain circuit"
+);
+guest.verify(input.hcp.method_id, &input.hcp);
+```
+
+- Validates the Operator's Header Chain Proof (HCP) method ID matches expected value
+- Cryptographically verifies the HCP using RISC Zero's `verify()` function
+- Ensures the Operator is following a valid Bitcoin chain
+
+### 2. Watchtower Challenge Processing
+
+The circuit processes challenges from watchtowers who monitor operator behavior:
+
+<Steps>
+  <Step title="Signature Verification">
+    For each watchtower challenge transaction, verify the Schnorr signature for spending the KickOff connector output (src/bridge_circuit/mod.rs:309-484)
+  </Step>
+  
+  <Step title="Challenge Flag Setting">
+    If signature is valid, set corresponding bit in `challenge_sending_watchtowers` bitmap (20 bytes, 160 watchtowers max)
+  </Step>
+  
+  <Step title="Work Sorting">
+    Sort valid watchtower challenges by `total_work` in descending order (mod.rs:586)
+  </Step>
+  
+  <Step title="Groth16 Verification">
+    Verify Groth16 proofs sequentially until first valid proof is found, yielding `max_total_work` (mod.rs:590-600)
+  </Step>
+  
+  <Step title="Work Comparison">
+    Assert Operator's `total_work` from HCP exceeds `max_total_work` from watchtowers (mod.rs:156-160)
+  </Step>
+</Steps>
+
+<Accordion title="Technical: Watchtower Challenge Transaction Formats">
+  Watchtower challenge transactions have two valid output formats:
+
+  **Single Output Format**
+  - One OP_RETURN output containing 144 bytes
+  - 128 bytes: Compressed Groth16 proof
+  - 16 bytes: Total work value
+
+  **Three Output Format**
+  - Output 1: P2TR containing first 32 bytes of Groth16 proof
+  - Output 2: P2TR containing next 32 bytes of Groth16 proof
+  - Output 3: OP_RETURN containing remaining 64 bytes of proof + 16 bytes total work
+
+  The circuit extracts and reconstructs the 128-byte Groth16 proof from either format (mod.rs:523-584).
+</Accordion>
+
+### 3. Simple Payment Verification (SPV)
+
+```rust
+let mmr = input.hcp.chain_state.block_hashes_mmr.clone();
+
+if !input.payout_spv.verify(mmr) {
+    panic!("Invalid SPV proof for txid: {}", 
+           input.payout_spv.transaction.compute_txid());
+}
+```
+
+- Verifies inclusion of payout transaction in the claimed Bitcoin block
+- Uses Merkle tree proof based on transaction IDs
+- Confirms block header is in the Merkle Mountain Range (MMR) of the canonical chain
+
+### 4. Light Client Proof Verification
+
+```rust
+let light_client_circuit_output = lc_proof_verifier(input.lcp.clone());
+
+let lc_l1_block_hash = light_client_circuit_output.latest_da_state.block_hash;
+let spv_l1_block_hash = input.payout_spv.block_header.compute_block_hash();
+
+if lc_l1_block_hash != spv_l1_block_hash {
+    panic!("L1 block hash mismatch");
+}
+```
+
+- Verifies the Light Client Proof from Citrea's recursive circuit
+- Ensures L1 block hash from LCP matches the payout transaction's block hash
+- Validates the L2 state root for storage proof verification
+
+### 5. EVM Storage Proof Verification
+
+```rust
+let (user_wd_outpoint, vout, move_txid) =
+    verify_storage_proofs(&input.sp, light_client_circuit_output.l2_state_root);
+
+assert_eq!(
+    user_wd_txid,
+    input.payout_spv.transaction.input[payout_input_index].previous_output.txid,
+    "Invalid withdrawal transaction ID"
+);
+```
+
+- Verifies storage proof for deposit UTXO using state root from LCP
+- Verifies storage proof for withdrawal data from bridge contract
+- Confirms payout transaction data matches contract state
+
+### 6. Output Generation
+
+The circuit generates a final output hash committed to the zkVM journal:
+
+```rust
+let deposit_constant = deposit_constant(
+    operator_xonlypk,
+    input.watchtower_challenge_connector_start_idx,
+    &input.all_tweaked_watchtower_pubkeys,
+    *move_txid,
+    round_txid,
+    kickoff_round_vout,
+    input.hcp.genesis_state_hash,
+);
+
+let journal_hash = journal_hash(
+    payout_tx_blockhash,
+    latest_blockhash,
+    challenge_sending_watchtowers,
+    deposit_constant,
+);
+
+guest.commit(journal_hash.as_bytes());
+```
+
+<Accordion title="Technical: Deposit Constant Calculation">
+  The `deposit_constant` is a SHA-256 hash of:
+  
+  1. Operator's X-only public key (32 bytes)
+  2. Watchtower challenge connector start index (4 bytes)
+  3. SHA-256 hash of all tweaked watchtower public keys
+  4. Move transaction ID (32 bytes)
+  5. Round transaction ID (32 bytes)
+  6. KickOff round vout (4 bytes)
+  7. Genesis state hash (32 bytes)
+  
+  This uniquely identifies the deposit and prevents replay attacks across different bridge instances.
+</Accordion>
+
+## Groth16 Proof System
+
+The Bridge Circuit uses Groth16 proofs for efficient verification of Work Only Circuit outputs:
+
+### Proof Structure
+
+Groth16 proofs are compressed to 128 bytes containing:
+- Elliptic curve points proving witness computation
+- Pairing check elements
+- Constraint satisfaction evidence
+
+### Verification Process
+
+```rust
+fn convert_to_groth16_and_verify(
+    compressed_proof: &[u8; 128],
+    total_work: [u8; 16],
+    image_id: &[u8; 32],
+    genesis_state_hash: [u8; 32],
+) -> bool {
+    let seal = match CircuitGroth16Proof::from_compressed(compressed_proof) {
+        Ok(seal) => seal,
+        Err(_) => return false,
+    };
+
+    let groth16_proof = CircuitGroth16WithTotalWork::new(
+        seal, total_work, genesis_state_hash
+    );
+
+    groth16_proof.verify(image_id)
+}
+```
+
+The verifier (groth16_verifier.rs:105-134):
+1. Reconstructs the Work Only Circuit output from `total_work` and `genesis_state_hash`
+2. Creates output digest using SHA-256
+3. Generates claim digest for the proof
+4. Verifies against prepared verification key using BN254 curve pairing
+
+## Key Implementation Files
+
+### RISC Zero Guest
+
+**`risc0-circuits/bridge-circuit/guest/src/main.rs`**
+```rust
+use circuits_lib::bridge_circuit::bridge_circuit;
+
+pub static WORK_ONLY_IMAGE_ID: [u8; 32] = match option_env!("BITCOIN_NETWORK") {
+    Some(network) if matches!(network.as_bytes(), b"mainnet") => MAINNET_WORK_ONLY_METHOD_ID,
+    Some(network) if matches!(network.as_bytes(), b"testnet4") => TESTNET4_WORK_ONLY_METHOD_ID,
+    Some(network) if matches!(network.as_bytes(), b"signet") => SIGNET_WORK_ONLY_METHOD_ID,
+    Some(network) if matches!(network.as_bytes(), b"regtest") => REGTEST_WORK_ONLY_METHOD_ID,
+    None => MAINNET_WORK_ONLY_METHOD_ID,
+    _ => panic!("Invalid network type"),
+};
+
+fn main() {
+    let zkvm_guest = common::zkvm::Risc0Guest::new();
+    bridge_circuit(&zkvm_guest, WORK_ONLY_IMAGE_ID);
+}
+```
+
+- Entry point for RISC Zero zkVM execution
+- Dynamically resolves Work Only circuit method ID based on network
+- Initializes guest environment and invokes bridge circuit logic
+
+### Core Circuit Logic
+
+**`circuits-lib/src/bridge_circuit/mod.rs`**
+
+The main verification function at mod.rs:137-245 orchestrates:
+1. Input reading from host
+2. HCP verification (line 146)
+3. Watchtower challenge processing (line 148-149)
+4. Work comparison (line 156-160)
+5. SPV verification (line 164-169)
+6. Light client verification (line 172)
+7. Block hash consistency check (line 178-180)
+8. Storage proof verification (line 183-184)
+9. Output generation and commitment (line 237-244)
+
+## Build Configuration
+
+**`risc0-circuits/bridge-circuit/build.rs`**
+
+The build script:
+- Compiles `bridge-circuit-guest` into RISC Zero ELF binary
+- Computes unique method ID for the compiled program
+- Handles `BITCOIN_NETWORK` environment variable for network-specific builds
+- Optionally uses Docker for reproducible guest builds
+- Copies generated ELF to `elfs` folder with `test-` prefix if `use-test-vk` feature enabled
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Header Chain Circuit" icon="link" href="/circuits/header-chain-circuit">
+    Learn how Bitcoin header chains are verified
+  </Card>
+  <Card title="Work Only Circuit" icon="chart-line" href="/circuits/work-only-circuit">
+    Understand proof-of-work extraction for watchtower challenges
+  </Card>
+</CardGroup>
